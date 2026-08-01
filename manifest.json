@@ -1,0 +1,16 @@
+{
+  "name": "한 달, 하나 끝내기",
+  "short_name": "한 달",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#E9ECF1",
+  "theme_color": "#E9ECF1",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
