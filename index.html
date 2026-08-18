@@ -147,22 +147,48 @@
 .wrap ul.thoughts li button:hover { color: var(--amber); }
 
 /* ── workout ── */
-/* 오늘 요약 — 상단 고정 */
+/* 오늘 요약 — 큰 숫자 하나가 지배하는 히어로 블록 */
 .wrap .tdy {
-  display: flex; align-items: stretch; gap: 1px;
-  background: var(--line); border: 1px solid var(--line);
-  border-radius: 3px; overflow: hidden; margin-bottom: 16px;
+  position: relative; overflow: hidden;
+  background: var(--paper-2); border: 1px solid var(--line);
+  border-radius: 4px; margin-bottom: 16px; padding: 15px 16px 13px;
 }
-.wrap .tdy div { flex: 1; background: var(--paper-2); padding: 11px 6px; text-align: center; }
-.wrap .tdy b {
-  display: block; font-family: var(--f-mono); font-size: 19px;
-  font-weight: 500; color: var(--ink); line-height: 1.2;
+.wrap .tdy::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0;
+  width: 3px; background: var(--line);
 }
-.wrap .tdy.on b { color: var(--amber); }
-.wrap .tdy em {
+.wrap .tdy.on::before { background: var(--amber); }
+.wrap .tdyh {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  font-family: var(--f-mono); font-size: 10px; letter-spacing: 0.14em;
+  color: var(--mute); text-transform: uppercase; margin-bottom: 6px;
+}
+.wrap .tdyh .st {
+  letter-spacing: 0.04em; text-transform: none; font-size: 10.5px;
+}
+.wrap .tdy.on .tdyh .st { color: var(--amber); }
+.wrap .tdyv {
+  font-family: var(--f-mono); font-weight: 500;
+  font-size: clamp(34px, 11vw, 46px); line-height: 1;
+  letter-spacing: -0.03em; color: var(--ink);
+}
+.wrap .tdy:not(.on) .tdyv { color: var(--line); }
+.wrap .tdyv s { text-decoration: none; font-size: 15px; color: var(--mute); margin-left: 5px; }
+.wrap .tdyd {
+  display: flex; gap: 18px; margin-top: 11px;
+  padding-top: 10px; border-top: 1px solid var(--line);
+}
+.wrap .tdyd div { min-width: 0; }
+.wrap .tdyd b {
+  font-family: var(--f-mono); font-size: 15px; font-weight: 500; color: var(--ink);
+}
+.wrap .tdyd b s { text-decoration: none; font-size: 10px; color: var(--mute); margin-left: 2px; }
+.wrap .tdyd em {
   display: block; font-style: normal; font-size: 10px;
-  color: var(--mute); margin-top: 3px; letter-spacing: 0.04em;
+  color: var(--mute); letter-spacing: 0.04em; margin-top: 1px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.wrap .tdyd .parts { flex: 1; min-width: 0; }
 
 .wrap .pstat {
   font-family: var(--f-mono); font-size: 11px; color: var(--mute);
@@ -200,6 +226,25 @@
   color: var(--mute); margin-top: 3px;
 }
 .wrap .xlast b { color: var(--amber); font-weight: 500; font-size: 11.5px; }
+/* 개인 최고 — 레퍼런스 공통으로 가장 크게 다뤄지는 요소 */
+.wrap .xpr {
+  flex: 0 0 auto; text-align: right; padding-left: 6px;
+  border-left: 1px solid var(--line); margin-left: 2px;
+}
+.wrap .xpr b {
+  display: block; font-family: var(--f-mono); font-size: 15px;
+  font-weight: 500; color: var(--ink); line-height: 1.1;
+}
+.wrap .xpr b s { text-decoration: none; font-size: 9.5px; color: var(--mute); }
+.wrap .xpr em {
+  display: block; font-style: normal; font-family: var(--f-mono);
+  font-size: 8.5px; letter-spacing: 0.12em; color: var(--mute); margin-top: 2px;
+}
+.wrap .xtoday {
+  flex: 0 0 auto; font-family: var(--f-mono); font-size: 9px;
+  letter-spacing: 0.1em; color: var(--paper-2); background: var(--amber);
+  border-radius: 2px; padding: 4px 5px; align-self: center;
+}
 .wrap .xdel {
   flex: 0 0 auto; background: none; border: none; color: var(--mute);
   cursor: pointer; font-size: 15px; font-family: var(--f-body);
@@ -208,19 +253,38 @@
 
 .wrap .exbody { padding: 0 11px 12px; }
 
-/* 입력 — 무게 / 횟수 / 기록 */
+/* 입력 — 무게 / 횟수 / 기록
+   키보드를 띄우지 않고 한 손으로 올리고 내릴 수 있게 스테퍼를 붙였습니다. */
 .wrap .setrow { display: flex; align-items: stretch; gap: 6px; }
-.wrap .setfield { flex: 1; min-width: 0; position: relative; }
+.wrap .setfield {
+  flex: 1; min-width: 0; position: relative;
+  display: flex; align-items: stretch;
+  background: #fff; border: 1px solid var(--line); border-radius: 3px;
+}
+.wrap .setfield:focus-within { border-color: var(--amber); }
 .wrap .setfield input {
-  width: 100%; text-align: center;
-  font-family: var(--f-mono); font-size: 17px; font-weight: 500;
-  padding: 11px 26px 11px 10px; background: #fff;
+  width: 100%; min-width: 0; text-align: center;
+  font-family: var(--f-mono); font-size: 18px; font-weight: 500;
+  padding: 11px 2px 15px; background: none; border: none; border-radius: 0;
+  -moz-appearance: textfield;
 }
+.wrap .setfield input:focus { outline: none; }
+.wrap .setfield input::-webkit-outer-spin-button,
+.wrap .setfield input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .wrap .setfield span {
-  position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
-  font-family: var(--f-mono); font-size: 11px; color: var(--mute); pointer-events: none;
+  position: absolute; left: 0; right: 0; bottom: 4px; text-align: center;
+  font-family: var(--f-mono); font-size: 9px; letter-spacing: 0.12em;
+  color: var(--mute); pointer-events: none;
 }
-.wrap .setrow .add { padding: 0 18px; font-size: 14px; border-radius: 2px; }
+.wrap .stp {
+  flex: 0 0 34px; background: var(--paper); border: none;
+  border-right: 1px solid var(--line);
+  font-family: var(--f-mono); font-size: 17px; color: var(--ink-2);
+  cursor: pointer; line-height: 1; padding: 0; border-radius: 2px 0 0 2px;
+}
+.wrap .stp.up { border-right: none; border-left: 1px solid var(--line); border-radius: 0 2px 2px 0; }
+.wrap .stp:active { background: var(--amber); color: var(--paper-2); }
+.wrap .setrow .add { padding: 0 16px; font-size: 14px; border-radius: 3px; }
 
 /* 세트 기록 — 날짜별 */
 .wrap .sgroup { margin-top: 16px; }
@@ -386,6 +450,16 @@
   font-size: 13px; line-height: 1; padding: 2px 5px 2px 6px; font-family: var(--f-body);
 }
 .wrap .sch button:hover { color: var(--amber); }
+/* 그 운동의 최고 무게를 친 세트 */
+.wrap .sch[data-pr="1"] { border-color: var(--amber); background: var(--paper-2); }
+.wrap .sch[data-pr="1"] i { background: var(--amber); }
+.wrap .sch[data-pr="1"] b { color: var(--amber); }
+/* 부위 칩 — 오늘 이미 한 부위 표시 */
+.wrap .btab .dot {
+  display: inline-block; width: 5px; height: 5px; border-radius: 50%;
+  background: var(--amber); margin-left: 6px; vertical-align: middle;
+}
+.wrap .btab[data-sel="1"] .dot { background: var(--paper-2); }
 
 /* 뷰 전환 — 부위별 / 날짜별 */
 .wrap .vsw {
@@ -1029,9 +1103,11 @@
   function renderPartbar() {
     $('partbar').innerHTML = PARTS.map(function (p) {
       var d = partDays(p.k)[0];
+      var isToday = d && d.t === today();
       return '<button class="btab" data-x="' + p.k + '" data-sel="' +
         (p.k === state.part ? 1 : 0) + '">' + p.n +
-        '<span class="c">' + (d ? dshow(d.t) : '—') + '</span></button>';
+        '<span class="c">' + (d ? dshow(d.t) : '—') + '</span>' +
+        (isToday ? '<i class="dot"></i>' : '') + '</button>';
     }).join('');
   }
 
@@ -1083,11 +1159,15 @@
     var on = sets > 0;
     $('extoday').innerHTML =
       '<div class="tdy' + (on ? ' on' : '') + '">' +
-      '<div><b>' + (on ? Math.round(vol).toLocaleString('ko-KR') : '—') + '</b><em>오늘 kg</em></div>' +
-      '<div><b>' + (on ? sets : '—') + '</b><em>세트</em></div>' +
-      '<div><b>' + (on ? names.length : '—') + '</b><em>' +
-        (on ? esc(names.join(' · ')) : '부위') + '</em></div>' +
-      '</div>';
+      '<div class="tdyh"><span>TODAY · ' + dshow(t) + '(' + dwd(t) + ')</span>' +
+        '<span class="st">' + (on ? '기록 중' : '아직 안 함') + '</span></div>' +
+      '<div class="tdyv">' + (on ? Math.round(vol).toLocaleString('ko-KR') : '0') +
+        '<s>kg 들어올림</s></div>' +
+      '<div class="tdyd">' +
+        '<div><b>' + sets + '<s>세트</s></b><em>오늘 누적</em></div>' +
+        '<div class="parts"><b>' + (on ? names.length : 0) + '<s>부위</s></b><em>' +
+          (on ? esc(names.join(' · ')) : '부위를 골라 시작하세요') + '</em></div>' +
+      '</div></div>';
   }
 
   // 같은 무게·횟수가 연달아 나오면 "60kg×10 3세트" 로 묶습니다.
@@ -1249,16 +1329,30 @@
           '</b>kg × <b>' + last.r + '</b>회 · <b>' + lastN + '</b>세트'
         : '기록 없음';
 
+      // 이 운동의 개인 최고 무게 — 카드 오른쪽에 항상 보여줍니다.
+      var prMax = 0;
+      x.s.forEach(function (s) { if (s.w > prMax) prMax = s.w; });
+      var didToday = x.s.some(function (s) { return s.t === today(); });
+      var rightSide =
+        (didToday ? '<span class="xtoday">오늘</span>' : '') +
+        (prMax ? '<div class="xpr"><b>' + prMax + '<s>kg</s></b><em>PR</em></div>' : '');
+
       var body = '';
       if (open) {
         // 직전 기록을 미리 채워둡니다 — 대개 같은 무게로 이어 하기 때문입니다.
         var pw = last ? ' value="' + last.w + '"' : '';
         var pr = last ? ' value="' + last.r + '"' : '';
         body = '<div class="exbody"><div class="setrow">' +
-          '<div class="setfield"><input type="number" class="kg" inputmode="decimal"' +
-            ' step="0.5" min="0" placeholder="0"' + pw + '><span>kg</span></div>' +
-          '<div class="setfield"><input type="number" class="rp" inputmode="numeric"' +
-            ' step="1" min="1" placeholder="0"' + pr + '><span>회</span></div>' +
+          '<div class="setfield">' +
+            '<button class="stp" data-step="-2.5" data-f="kg" aria-label="무게 내리기">−</button>' +
+            '<input type="number" class="kg" inputmode="decimal"' +
+            ' step="0.5" min="0" placeholder="0"' + pw + '><span>KG</span>' +
+            '<button class="stp up" data-step="2.5" data-f="kg" aria-label="무게 올리기">+</button></div>' +
+          '<div class="setfield">' +
+            '<button class="stp" data-step="-1" data-f="rp" aria-label="횟수 내리기">−</button>' +
+            '<input type="number" class="rp" inputmode="numeric"' +
+            ' step="1" min="1" placeholder="0"' + pr + '><span>회</span>' +
+            '<button class="stp up" data-step="1" data-f="rp" aria-label="횟수 올리기">+</button></div>' +
           '<button class="add" data-set="' + i + '">기록</button></div>' +
           (x.s.length
             ? groupSets(x.s).map(function (g) {
@@ -1269,7 +1363,8 @@
                   '<em>' + dago(g.t) + ' · ' + g.items.length + '세트 · ' +
                   Math.round(gv).toLocaleString('ko-KR') + 'kg</em></div>' +
                   '<div class="schips">' + g.items.map(function (it, k) {
-                    return '<span class="sch"><i>' + (k + 1) + '</i>' +
+                    return '<span class="sch" data-pr="' +
+                      (prMax && it.v.w === prMax ? 1 : 0) + '"><i>' + (k + 1) + '</i>' +
                       '<b>' + it.v.w + '</b>kg<em>×</em><b>' + it.v.r + '</b>회' +
                       '<button data-rm="' + it.j + '" aria-label="세트 삭제">×</button></span>';
                   }).join('') + '</div></div>';
@@ -1280,7 +1375,7 @@
       return '<div class="exitem" data-open="' + (open ? 1 : 0) + '">' +
         '<div class="exhead" data-i="' + i + '">' +
         '<div class="xinfo"><div class="xn">' + esc(x.n) + '</div>' +
-        '<div class="xlast">' + lastLine + '</div></div>' +
+        '<div class="xlast">' + lastLine + '</div></div>' + rightSide +
         '<button class="xdel" data-del="' + i + '" aria-label="운동 삭제">×</button>' +
         '</div>' + body + '</div>';
     }).join('');
@@ -1324,6 +1419,20 @@
       if (openEx === di) openEx = null;
       else if (openEx != null && openEx > di) openEx--;
       renderPartbar(); renderEx(); save();
+      return;
+    }
+
+    // −/+ 스테퍼 — 키보드 없이 무게·횟수 조절
+    var stp = e.target.closest('.stp');
+    if (stp) {
+      var fld = stp.closest('.setfield').querySelector('input');
+      var step = parseFloat(stp.dataset.step);
+      var cur = parseFloat(fld.value);
+      if (!isFinite(cur)) cur = 0;
+      var nv = cur + step;
+      var min = stp.dataset.f === 'rp' ? 1 : 0;
+      if (nv < min) nv = min;
+      fld.value = stp.dataset.f === 'rp' ? Math.round(nv) : Math.round(nv * 10) / 10;
       return;
     }
 
