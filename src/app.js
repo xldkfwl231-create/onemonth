@@ -89,6 +89,7 @@ function renderRoom() {
       <p>책장이 비어 있습니다.</p>
       <button class="primary" data-action="add-book">첫 책 놓기</button>
     </div>`}
+    <p class="room-aside"><a href="#trips">다녀온 자리 ${state.trips.length}</a></p>
   </section>`;
 }
 function renderShelf() {
@@ -241,6 +242,8 @@ function bookEditor(existing) {
     finally { clearTimeout(timeout); }
   }
   $('#search-books').onclick = search;
+  // 표지가 비어 있는 기존 책은 제목으로 한 번 자동으로 찾아줍니다.
+  if (existing && !existing.cover && existing.title.trim()) { $('#book-query').value = existing.title; search(); }
   $('#book-query').onkeydown = e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); search(); } };
   formHandler(async data => {
     if (imageBusy) throw new Error('사진을 처리하는 중입니다. 잠시 기다려주세요.');

@@ -66,3 +66,10 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
 .kind i{display:block;width:40px;height:1px;background:currentColor;opacity:.35;margin:4px 0 1px}
 .kind-go{font-size:13px;opacity:.75}
 .record-toolbar{justify-content:flex-end}
+
+.room-aside{margin:14px 0 0;text-align:center;font-size:12.5px}
+.room-aside a{color:var(--muted);border-bottom:1px solid var(--line);padding-bottom:2px}
+@media (max-width:760px){
+  .navigation{overflow:hidden}
+  .navigation a{font-size:12px;padding:10px 2px;min-width:0}
+}
