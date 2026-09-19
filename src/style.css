@@ -94,3 +94,8 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
   .navigation a[aria-current]{box-shadow:none}
   .navigation a[aria-current]::before{content:'';position:absolute;top:0;left:50%;transform:translateX(-50%);width:22px;height:2px;background:var(--green);border-radius:1px}
 }
+
+/* 탭 링크가 flex라 text-align이 먹지 않습니다 — 가운데 정렬을 flex로 지정 */
+@media (max-width:760px){
+  .navigation a{display:flex;align-items:center;justify-content:center}
+}
