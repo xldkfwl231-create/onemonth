@@ -1,5 +1,5 @@
-const CACHE = 'reading-notebook-shell-v2-1';
-const FILES = ['./','./index.html','./src/app.js','./src/core.js','./src/storage.js','./src/style.css','./src/config.js','./icon.svg','./manifest.json'];
+const CACHE = 'reading-notebook-shell-v3-0';
+const FILES = ['./','./index.html','./src/app.js','./src/core.js','./src/storage.js','./src/style.css','./src/config.js','./icon.svg','./manifest.json','./assets/room-empty.webp','./assets/paper.webp'];
 self.addEventListener('install',event => { event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(FILES))); });
 self.addEventListener('activate',event => { event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k.startsWith('reading-notebook-shell-') && k !== CACHE).map(k => caches.delete(k))))); });
 self.addEventListener('fetch',event => {

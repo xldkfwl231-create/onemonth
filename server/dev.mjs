@@ -21,9 +21,9 @@ const server = http.createServer(async (req,res) => {
     if (url.pathname === '/src/config.js' && process.env.KAKAO_REST_API_KEY) { res.writeHead(200,{'Content-Type':mime['.js'],'Cache-Control':'no-store'}); res.end('export const BOOK_SEARCH_ENDPOINT = "/api/books";'); return; }
     const relative = decodeURIComponent(url.pathname).replace(/^\/+/, '') || 'index.html';
     // Expose only app assets, not .git, keys, tests, or the local server source.
-    if (!/^(index\.html|legacy-records\.html|manifest\.json|icon\.svg|sw\.js|src\/[a-z-]+\.(js|css))$/.test(relative)) { res.writeHead(404); res.end(); return; }
+    if (!/^(index\.html|legacy-records\.html|manifest\.json|icon\.svg|sw\.js|src\/[a-z-]+\.(js|css)|assets\/[a-z-]+\.webp)$/.test(relative)) { res.writeHead(404); res.end(); return; }
     const data = await readFile(path.join(root,relative));
-    res.writeHead(200,{'Content-Type':mime[path.extname(relative)] || 'application/octet-stream','Cache-Control':'no-cache'}); res.end(req.method === 'HEAD' ? undefined : data);
+    res.writeHead(200,{'Content-Type':mime[path.extname(relative)] || 'application/octet-stream','Cache-Control':'no-store'}); res.end(req.method === 'HEAD' ? undefined : data);
   } catch(e) { res.writeHead(e.code === 'ENOENT' ? 404 : 502); res.end('Request failed'); }
 });
 server.listen(Number(process.env.PORT || 4173),'127.0.0.1',() => console.log(`Reading notebook: http://127.0.0.1:${server.address().port}`));

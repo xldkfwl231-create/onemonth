@@ -39,16 +39,57 @@ function cover(b) {
 }
 document.addEventListener('error', e => { if (e.target instanceof HTMLImageElement) { e.target.hidden = true; e.target.parentElement.querySelector('.cover-fallback')?.removeAttribute('aria-hidden'); } }, true);
 const empty = (title, message, action = '') => `<div class="empty"><div class="empty-illustration" aria-hidden="true"><i></i><i></i><i></i></div><h2>${title}</h2><p>${message}</p>${action}</div>`;
-function route() { const [page, id] = location.hash.slice(1).split('/'); return { page: page || 'shelf', id }; }
+function route() { const [page, id] = location.hash.slice(1).split('/'); return { page: page || 'room', id }; }
 const currentBook = () => state.books.find(b => b.id === route().id);
 function render() {
   if (!ready) return;
   const { page } = route();
   document.querySelectorAll('[data-nav]').forEach(a => { if (a.dataset.nav === (page === 'book' ? 'shelf' : page)) a.setAttribute('aria-current','page'); else a.removeAttribute('aria-current'); });
+  document.body.dataset.page = page;
   if (page === 'book') renderBook();
   else if (page === 'questions') renderQuestions();
   else if (page === 'thoughts' || page === 'trips') renderJournal(page);
-  else renderShelf();
+  else if (page === 'shelf') renderShelf();
+  else renderRoom();
+}
+
+// 책장 그림 안의 칸 좌표 — 빈 방 일러스트(4:3)에서 직접 잰 값입니다.
+const SHELVES = [66.9, 47.9, 28.3];      // 칸마다 책이 서는 바닥 높이 (아래에서부터 %)
+const SPINE = { forest:'#4A6A4C', clay:'#A9705A', blue:'#6E86A8', sand:'#C2A878' };
+function spines(books) {
+  return books.slice(0, 15).map((b, i) => {
+    const shelf = SHELVES[Math.floor(i / 5)], slot = i % 5;
+    const left = 57.3 + slot * 3.35, h = 13.6 + (i % 3) * 0.8;
+    return `<a class="spine" href="#book/${esc(b.id)}" title="${esc(b.title)}" aria-label="${esc(b.title)}"
+      style="left:${left}%;bottom:${shelf}%;height:${h}%;background:${SPINE[b.color] || SPINE.forest}"></a>`;
+  }).join('');
+}
+function renderRoom() {
+  const reading = state.books.filter(b => b.status === 'reading');
+  const current = reading[reading.length - 1] || state.books[state.books.length - 1];
+  const today = new Date().toLocaleDateString('ko-KR', { year:'numeric', month:'2-digit', day:'2-digit' }).replace(/\.$/, '').replace(/\s/g, ' ');
+  $('#main').innerHTML = `<section class="room" aria-labelledby="room-title">
+    <p class="room-date">${esc(today)}</p>
+    <h1 id="room-title">기록장</h1>
+    <div class="room-scene">
+      <img src="assets/room-empty.webp" alt="" width="2176" height="1632">
+      ${spines(state.books)}
+      <a class="hotspot board" href="#thoughts" aria-label="생각 ${state.thoughts.length}개"></a>
+      <a class="hotspot shelf" href="#shelf" aria-label="책 ${state.books.length}권"></a>
+    </div>
+    ${current ? `<div class="room-current">
+      <a class="room-book" href="#book/${esc(current.id)}">${cover(current)}</a>
+      <div class="room-meta">
+        <span class="status-tag">${current.status === 'finished' ? '다 읽음' : '읽는 중'}</span>
+        <h2>${esc(current.title)}</h2>
+        <p class="muted">${esc([current.author, current.publisher].filter(Boolean).join(' · ') || '문장 ' + current.entries.length + ' · 질문 ' + current.questions.length)}</p>
+      </div>
+      <a class="primary continue" href="#book/${esc(current.id)}">이어가기 <span aria-hidden="true">›</span></a>
+    </div>` : `<div class="room-current empty-current">
+      <p>책장이 비어 있습니다.</p>
+      <button class="primary" data-action="add-book">첫 책 놓기</button>
+    </div>`}
+  </section>`;
 }
 function renderShelf() {
   $('#main').innerHTML = `<section aria-labelledby="shelf-title"><div class="intro"><div><p class="eyebrow">MY LITTLE LIBRARY</p><h1 id="shelf-title">나의 책장</h1><p>읽다가 머문 자리마다, 나만의 기록이 쌓입니다.</p></div><button class="primary intro-actions" data-action="add-book">＋ 책 추가</button></div><div class="toolbar"><div class="filters" aria-label="독서 상태">${[['all','전체'],['reading','읽는 중'],['finished','다 읽음']].map(([v,l]) => `<button data-filter="${v}" aria-pressed="${filter === v}">${l}</button>`).join('')}</div><div class="search-field"><label class="visually-hidden" for="local-search">책과 기록 검색</label><input type="search" id="local-search" placeholder="책 제목, 문장, 질문 찾기" value="${esc(query)}"></div></div><div id="shelf-results"></div></section>`;
@@ -68,7 +109,7 @@ function renderBook() {
   if (!b) { $('#main').innerHTML = empty('책을 찾을 수 없어요', '책장에서 다른 책을 골라주세요.', '<a class="back" href="#shelf">← 책장으로</a>'); return; }
   const activeQuery = query.trim();
   const records = b[entryTab].filter(e => !activeQuery || [e.text,e.note || '',e.answer || '',e.page || ''].some(t => t.toLowerCase().includes(activeQuery.toLowerCase())));
-  $('#main').innerHTML = `<div class="narrow"><a class="back" href="#shelf">← 책장으로</a><section class="book-hero" aria-labelledby="book-title">${cover(b)}<div><span class="status-tag">${b.status === 'finished' ? '다 읽음' : '읽는 중'}</span><h1 id="book-title">${esc(b.title)}</h1><p>${esc([b.author,b.publisher].filter(Boolean).join(' · ') || '나만의 독서 기록')}<br>${esc(dateLabel(b.createdAt))}부터${b.finishedAt ? `<br>${esc(dateLabel(b.finishedAt))} 완독` : ''}${b.isbn ? `<br>ISBN ${esc(b.isbn)}` : ''}</p><div class="actions"><button data-action="edit-book">책 정보 수정</button><button data-action="toggle-status">${b.status === 'finished' ? '다시 읽기' : '다 읽었어요'}</button></div></div></section><div class="toolbar"><div class="filters" aria-label="기록 종류"><button data-entry-tab="entries" aria-pressed="${entryTab === 'entries'}">문장 ${b.entries.length}</button><button data-entry-tab="questions" aria-pressed="${entryTab === 'questions'}">질문 ${b.questions.length}</button></div><button class="primary" data-action="add-record">＋ ${entryTab === 'entries' ? '문장' : '질문'} 남기기</button></div>${activeQuery ? `<p class="search-count">“${esc(query)}” 검색 중 <button class="quiet" data-action="clear-query">검색 해제</button></p>` : ''}<div class="record-list">${records.length ? [...records].reverse().map(e => recordCard(e,b,entryTab)).join('') : empty(activeQuery ? '일치하는 기록이 없어요' : entryTab === 'entries' ? '오래 두고 싶은 문장' : '서둘러 답하지 않아도 괜찮아요', activeQuery ? '검색을 해제하면 모든 기록이 보입니다.' : entryTab === 'entries' ? '읽다가 걸린 문장과 그때의 생각을 남겨보세요.' : '읽다가 생긴 물음을 적어두고, 나중의 나에게 건네보세요.')}</div><p class="section-note"><button class="quiet danger" data-action="delete-book">이 책 삭제</button></p></div>`;
+  $('#main').innerHTML = `<div class="narrow"><a class="back" href="#shelf">← 책장으로</a><section class="book-hero" aria-labelledby="book-title">${cover(b)}<span class="status-tag">${b.status === 'finished' ? '다 읽음' : '읽는 중'}</span><h1 id="book-title">${esc(b.title)}</h1><p class="book-sub">${esc([b.author,b.publisher].filter(Boolean).join(' · ') || '나만의 독서 기록')}</p><p class="book-sub small">${esc(dateLabel(b.createdAt))}부터${b.finishedAt ? ` · ${esc(dateLabel(b.finishedAt))} 완독` : ''}</p><div class="actions"><button data-action="edit-book">책 정보 수정</button><button data-action="toggle-status">${b.status === 'finished' ? '다시 읽기' : '다 읽었어요'}</button></div></section><div class="kind-cards"><button class="kind entries" data-entry-tab="entries" aria-pressed="${entryTab === 'entries'}"><span class="kind-mark" aria-hidden="true">&ldquo;</span><b>문장</b><span class="kind-count">${b.entries.length}</span><i></i><span class="kind-go" aria-hidden="true">→</span></button><button class="kind questions" data-entry-tab="questions" aria-pressed="${entryTab === 'questions'}"><span class="kind-mark" aria-hidden="true">?</span><b>질문</b><span class="kind-count">${b.questions.length}${b.questions.filter(q => q.answer).length ? ` · 답 ${b.questions.filter(q => q.answer).length}` : ''}</span><i></i><span class="kind-go" aria-hidden="true">→</span></button></div><div class="toolbar record-toolbar"><button class="primary" data-action="add-record">＋ ${entryTab === 'entries' ? '문장' : '질문'} 남기기</button></div>${activeQuery ? `<p class="search-count">“${esc(query)}” 검색 중 <button class="quiet" data-action="clear-query">검색 해제</button></p>` : ''}<div class="record-list">${records.length ? [...records].reverse().map(e => recordCard(e,b,entryTab)).join('') : empty(activeQuery ? '일치하는 기록이 없어요' : entryTab === 'entries' ? '오래 두고 싶은 문장' : '서둘러 답하지 않아도 괜찮아요', activeQuery ? '검색을 해제하면 모든 기록이 보입니다.' : entryTab === 'entries' ? '읽다가 걸린 문장과 그때의 생각을 남겨보세요.' : '읽다가 생긴 물음을 적어두고, 나중의 나에게 건네보세요.')}</div><p class="section-note"><button class="quiet danger" data-action="delete-book">이 책 삭제</button></p></div>`;
 }
 function renderQuestions() {
   const qs = state.books.flatMap(b => b.questions.map(q => ({ b, q }))).filter(({q}) => questionFilter === 'all' || (questionFilter === 'open' ? !q.answer : !!q.answer)).reverse();

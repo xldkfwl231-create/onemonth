@@ -5,3 +5,64 @@
 @media(max-width:700px){.shell{padding:0 22px}.masthead{height:78px}.brand{font-size:21px}.brand-sub{display:none}.navigation{height:59px;gap:28px;font-size:14px}main{padding:29px 0 35px}.intro{gap:16px;margin-bottom:26px}.intro p{font-size:13px}.intro h1{font-size:32px}.intro button{padding:9px 13px;font-size:13px}.eyebrow{font-size:10px;margin-bottom:11px}.toolbar{flex-wrap:wrap;gap:16px;padding-top:18px;margin-bottom:24px}.search-field{max-width:none;width:100%}.book-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:28px 22px}.cover-fallback b{font-size:22px}.book-tile h3{font-size:17px;margin-top:13px}.book-hero{grid-template-columns:105px minmax(0,1fr);gap:22px;padding-bottom:28px}.book-hero .cover{width:105px}.book-hero .cover-fallback b{font-size:16px}.book-hero .cover-fallback span{font-size:7px;margin-top:12px}.book-hero .cover-fallback{padding:13px}.book-hero h1{font-size:25px;overflow-wrap:anywhere;margin:5px 0 9px}.book-hero p{font-size:11px}.book-hero .actions{gap:5px;margin-top:12px}.book-hero .actions button{font-size:11px;padding:7px 9px}.record{padding:19px 18px}.record .record-text{font-size:18px}.dialog-inner{padding:21px}.dialog-head h2{font-size:23px}dialog{max-height:93dvh}.field-row{grid-template-columns:1fr}.cover-editor{gap:18px}.form-actions{position:sticky;bottom:-21px;background:var(--paper);padding-bottom:16px;z-index:2}footer{flex-direction:column;gap:5px;padding-bottom:calc(25px + env(safe-area-inset-bottom))}.record .meta{flex-wrap:wrap}.empty{padding:35px 15px}.intro-actions{align-self:flex-end}.filters button{padding:8px 12px}}
 .cover-editor .cover-fallback{padding:12px}.cover-editor .cover-fallback b{font-size:14px;line-height:1.6}.cover-editor .cover-fallback span{font-size:6px;letter-spacing:1px;margin-top:12px}.cover-editor .cover-fallback:before{inset:7px}.book-tile h3,.cover-fallback b{word-break:keep-all;overflow-wrap:anywhere}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{transition:none!important;scroll-behavior:auto!important}}
+
+/* ── 종이 질감 · 방 화면 · 모바일 탭바 ───────────────────────── */
+body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;background:url(../assets/paper.webp) repeat;background-size:150px 60px;mix-blend-mode:overlay;opacity:.5}
+.shell{position:relative;z-index:1}
+
+.room{max-width:430px;margin:0 auto;padding:6px 0 0}
+.room-date{font:500 11px/1 var(--sans);letter-spacing:.22em;color:var(--muted);margin:0 0 8px}
+.room h1{font-size:31px;letter-spacing:-.01em;margin:0 0 18px}
+.room-scene{position:relative;border-radius:6px;overflow:hidden}
+.room-scene img{width:100%;height:auto;display:block}
+.spine{position:absolute;width:2.85%;border-radius:2px 2px 0 0;box-shadow:inset -1px 0 0 rgba(35,40,31,.22);transition:transform .12s}
+.spine:hover,.spine:focus-visible{transform:translateY(-4%)}
+.hotspot{position:absolute;border-radius:4px}
+.hotspot.board{left:13%;top:14%;width:30%;height:28%}
+.hotspot.shelf{left:54%;top:9%;width:32%;height:74%}
+.hotspot:hover,.hotspot:focus-visible{background:rgba(47,74,56,.08)}
+
+.room-current{display:flex;align-items:center;gap:15px;margin-top:20px;padding-top:18px;border-top:1px solid var(--line)}
+.room-current .cover{width:54px;flex:0 0 54px;border-radius:3px}
+.room-meta{flex:1;min-width:0}
+.room-meta h2{font-size:19px;margin:6px 0 2px;line-height:1.35}
+.room-meta p{margin:0;font-size:12px}
+.continue{flex:0 0 auto;display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:0 17px;border-radius:999px;font-size:13px;font-weight:500}
+.empty-current{justify-content:space-between}
+.empty-current p{margin:0;color:var(--muted)}
+
+@media (max-width:760px){
+  .shell{padding:0 20px 92px}
+  .masthead{height:72px}
+  .navigation{position:fixed;left:0;right:0;bottom:0;z-index:5;display:flex;gap:0;margin:0;padding:8px 0 max(14px,env(safe-area-inset-bottom));
+    background:var(--paper);border-top:1px solid var(--line)}
+  .navigation a{flex:1;text-align:center;font:500 12.5px/1 var(--serif);color:var(--muted);padding:10px 0;border:0}
+  .navigation a[aria-current]{color:var(--green);font-weight:700;box-shadow:inset 0 -2px 0 var(--green)}
+  .room h1{font-size:28px}
+}
+
+/* ── 책 화면: 가운데 표지 · 문장/질문 카드 ───────────────────── */
+.book-hero{display:flex;flex-direction:column;align-items:center;text-align:center;gap:0;margin:8px 0 22px}
+.book-hero .cover{width:150px;flex:0 0 auto;border-radius:5px;transform:rotate(-.4deg);box-shadow:0 12px 30px rgba(52,58,44,.26),0 2px 5px rgba(52,58,44,.14)}
+.book-hero .status-tag{margin:16px 0 8px}
+.book-hero h1{font-size:26px;letter-spacing:.02em;margin:0 0 6px}
+.book-sub{margin:0;font-size:12.5px;color:var(--muted)}
+.book-sub.small{margin-top:3px;font-size:11.5px;opacity:.85}
+.book-hero .actions{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;justify-content:center}
+
+.kind-cards{display:flex;gap:15px;margin-bottom:18px}
+.kind{flex:1 1 0;display:flex;flex-direction:column;align-items:center;gap:5px;
+  border:0;border-radius:13px;padding:14px 10px 12px;min-height:0;
+  box-shadow:0 3px 10px rgba(70,74,58,.1)}
+.kind.entries{background:#e4eddb}
+.kind.questions{background:#e1e9f3}
+.kind[aria-pressed=true]{outline:2px solid var(--green);outline-offset:2px}
+.kind.questions[aria-pressed=true]{outline-color:var(--blue)}
+.kind-mark{font:700 20px/1 var(--serif);color:var(--green)}
+.kind.questions .kind-mark{color:var(--blue)}
+.kind b{font:700 15.5px var(--serif)}
+.kind-count{font:500 13px var(--sans);color:#4e5c46}
+.kind.questions .kind-count{color:var(--blue)}
+.kind i{display:block;width:40px;height:1px;background:currentColor;opacity:.35;margin:4px 0 1px}
+.kind-go{font-size:13px;opacity:.75}
+.record-toolbar{justify-content:flex-end}
