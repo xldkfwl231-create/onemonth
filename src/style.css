@@ -84,3 +84,13 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
 .day.open .day-label{color:var(--ink)}
 .day-count{margin-left:auto;font:500 11.5px var(--sans);color:var(--muted)}
 .day-body{padding:2px 0 16px 22px;display:flex;flex-direction:column;gap:14px}
+
+/* 탭바가 화면 맨 아래에서 잘리지 않도록 — 제스처 바·주소창 여유 확보 */
+@media (max-width:760px){
+  .shell{padding-bottom:calc(104px + env(safe-area-inset-bottom))}
+  .navigation{padding:6px 0 calc(16px + env(safe-area-inset-bottom));box-shadow:0 -6px 18px rgba(70,74,58,.07)}
+  .navigation a{position:relative;padding:12px 2px 10px;line-height:1.25}
+  /* 선택 표시를 위쪽으로 — 아래 가장자리는 잘릴 수 있습니다 */
+  .navigation a[aria-current]{box-shadow:none}
+  .navigation a[aria-current]::before{content:'';position:absolute;top:0;left:50%;transform:translateX(-50%);width:22px;height:2px;background:var(--green);border-radius:1px}
+}
