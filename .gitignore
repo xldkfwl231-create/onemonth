@@ -1,2 +1,11 @@
 # bkit 플러그인 작업 상태 — 앱 코드가 아닙니다
 .bkit/
+node_modules/
+tests/artifacts/
+.env
+.env.*
+!.env.example
+
+# 디자인 시안 — 캔버스 결과물과 출판사 표지 이미지는 저장소에 두지 않습니다
+design/reading-notebook.html
+design/cover-*.webp

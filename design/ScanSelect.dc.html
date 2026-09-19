@@ -1,0 +1,110 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=IBM+Plex+Sans+KR:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+  <style>
+    body { margin: 0; }
+    a { color: #2F4A38; text-decoration: none; }
+    a:hover { color: #1E3324; }
+  </style>
+</helmet>
+
+<div style="width: 375px; height: 812px; background: #1A1D18; color: #F2EFE4; font-family: 'IBM Plex Sans KR', -apple-system, sans-serif; font-weight: 300; display: flex; flex-direction: column; overflow: hidden;">
+
+  <div style="display: flex; align-items: center; justify-content: space-between; padding: 14px 8px 8px 8px; flex-shrink: 0;">
+    <button style="height: 44px; padding: 0 12px; background: none; border: none; cursor: pointer; font-family: 'IBM Plex Sans KR', sans-serif; font-size: 13px; color: #A9AFA0;">취소</button>
+    <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; letter-spacing: 0.16em; color: #A9AFA0;">범위 고르기</span>
+    <button style="height: 44px; padding: 0 12px; background: none; border: none; cursor: pointer; font-family: 'IBM Plex Sans KR', sans-serif; font-size: 13px; color: #A9AFA0;">다시 찍기</button>
+  </div>
+
+  <div style="flex-grow: 1; padding: 0 14px; display: flex; flex-direction: column; overflow: hidden;">
+
+    <div style="width: 100%; border-radius: 4px; overflow: hidden; background: #E6DFCD; position: relative;">
+      <svg viewBox="0 0 347 386" style="width: 100%; height: auto; display: block;">
+        <defs>
+          <linearGradient id="pg" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#EFE8D6"/>
+            <stop offset="1" stop-color="#DED6C1"/>
+          </linearGradient>
+        </defs>
+        <rect width="347" height="386" fill="url(#pg)"/>
+        <path d="M0 0 L347 0 L347 386 L0 386Z" fill="none"/>
+
+        <g font-family="Gowun Batang, serif" font-size="13.5" fill="#4A4437">
+          <text x="26" y="46">우리는 자꾸 기준을 만들고 거기에 맞춰</text>
+          <text x="26" y="74">살도록 강요당해 왔기에 자신의 생각을</text>
+          <text x="26" y="102">의심한다.</text>
+        </g>
+
+        <rect x="20" y="122" width="307" height="30" fill="#C8FF3D" opacity="0.28"/>
+        <rect x="20" y="154" width="307" height="30" fill="#C8FF3D" opacity="0.28"/>
+        <rect x="20" y="186" width="196" height="30" fill="#C8FF3D" opacity="0.28"/>
+        <g font-family="Gowun Batang, serif" font-size="13.5" fill="#23281F">
+          <text x="26" y="142">책을 내려놓고 생각하는 시간이 동반될</text>
+          <text x="26" y="174">때 성장한다. 생각은 그냥 떠오르는 게</text>
+          <text x="26" y="206">아니라 반드시 독서가</text>
+        </g>
+
+        <circle cx="20" cy="127" r="7" fill="#2F4A38"/>
+        <rect x="18.5" y="127" width="3" height="24" fill="#2F4A38"/>
+        <circle cx="216" cy="211" r="7" fill="#2F4A38"/>
+        <rect x="214.5" y="187" width="3" height="24" fill="#2F4A38"/>
+
+        <g font-family="Gowun Batang, serif" font-size="13.5" fill="#4A4437">
+          <text x="26" y="238">동반되어야 한다.</text>
+          <text x="26" y="270">살아오는 동안 남을 비판하고 남의 행동을</text>
+          <text x="26" y="298">생각해 왔으면서 정작 나 자신을 돌아보지</text>
+          <text x="26" y="326">않는 경우가 많다.</text>
+        </g>
+
+        <g fill="none" stroke="#7E8A74" stroke-width="0.8" stroke-dasharray="3 3" opacity="0.75">
+          <rect x="20" y="28" width="307" height="30"/>
+          <rect x="20" y="60" width="307" height="30"/>
+          <rect x="20" y="92" width="72" height="30"/>
+          <rect x="20" y="220" width="128" height="30"/>
+          <rect x="20" y="252" width="307" height="30"/>
+          <rect x="20" y="284" width="307" height="30"/>
+          <rect x="20" y="316" width="128" height="30"/>
+        </g>
+
+        <text x="26" y="366" font-family="IBM Plex Mono, monospace" font-size="9" fill="#8A8471">142</text>
+      </svg>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 8px; padding: 14px 4px 0 4px;">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8B9481" stroke-width="1.8" stroke-linecap="round" style="flex-shrink: 0;"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.5M12 7.8v.2"/></svg>
+      <span style="font-size: 11.5px; line-height: 1.55; color: #8B9481;">점선이 읽어낸 글자입니다. 동그라미를 끌어 시작과 끝을 정하세요.</span>
+    </div>
+
+  </div>
+
+  <div style="background: #23271F; border-top: 1px solid #333A2D; padding: 16px 20px 28px 20px; flex-shrink: 0; display: flex; flex-direction: column; gap: 14px;">
+
+    <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 10px;">
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; letter-spacing: 0.14em; color: #8B9481;">고른 범위</span>
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: #8B9481;">41자</span>
+    </div>
+
+    <p style="font-family: 'Gowun Batang', serif; font-size: 14.5px; line-height: 1.75; color: #F2EFE4; margin: 0; text-wrap: pretty;">책을 내려놓고 생각하는 시간이 동반될 때 성장한다. 생각은 그냥 떠오르는 게 아니라 반드시 독서가</p>
+
+    <div style="display: flex; gap: 9px;">
+      <button style="flex-grow: 1; height: 50px; background: none; color: #C3CFBC; border: 1px solid #3F4738; border-radius: 3px; font-family: 'IBM Plex Sans KR', sans-serif; font-size: 13.5px; cursor: pointer;">글자 고치기</button>
+      <button style="flex-grow: 1; height: 50px; background: #C8DDBB; color: #1A2A18; border: none; border-radius: 3px; font-family: 'IBM Plex Sans KR', sans-serif; font-size: 13.5px; font-weight: 500; cursor: pointer;">이 범위로</button>
+    </div>
+
+  </div>
+
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"$preview":{"width":375,"height":812}}'>
+class Component extends DCLogic {}
+</script>
+</body>
+</html>

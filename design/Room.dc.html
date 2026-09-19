@@ -1,0 +1,79 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=IBM+Plex+Sans+KR:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+  <style>
+    body { margin: 0; }
+    a { color: #2F4A38; text-decoration: none; }
+    a:hover { color: #1E3324; }
+  </style>
+</helmet>
+
+<div style="width: 375px; height: 812px; background: #F3EEE1; color: #3A4636; position: relative; font-family: 'IBM Plex Sans KR', -apple-system, sans-serif; font-weight: 300; display: flex; flex-direction: column; overflow: hidden;">
+
+  <div style="position: absolute; inset: 0; background-image: url(&quot;paper.webp&quot;); background-size: 150px 60px; background-repeat: repeat; mix-blend-mode: overlay; opacity: 0.5; pointer-events: none; z-index: 5;"></div>
+
+  <div style="display: flex; flex-direction: column; gap: 6px; padding: 30px 24px 16px 24px; flex-shrink: 0;">
+    <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.22em; color: #8A8F80;">2026. 09. 13</span>
+    <h1 style="font-family: 'Gowun Batang', serif; font-weight: 700; font-size: 31px; line-height: 1.25; letter-spacing: -0.01em; margin: 0; color: #2E3A2C;">기록장</h1>
+  </div>
+
+  <div style="flex-grow: 1; position: relative; overflow: hidden;">
+    <div style="position: absolute; width: 132%; left: -16%; top: 50%; transform: translateY(-50%);">
+      <img src="room-empty.webp" alt="" style="width: 100%; display: block;">
+
+      <div style="position: absolute; left: 57.8%; bottom: 66.9%; display: flex; align-items: flex-end; gap: 0.5%; width: 26%;">
+        <span style="width: 11%; height: 0; padding-bottom: 42%; background: #6E8168; border-radius: 1.5px 1.5px 0 0; box-shadow: inset -1px 0 0 rgba(35,40,31,0.18);"></span>
+        <span style="width: 11%; height: 0; padding-bottom: 39%; background: #8FA3AE; border-radius: 1.5px 1.5px 0 0; box-shadow: inset -1px 0 0 rgba(35,40,31,0.18);"></span>
+      </div>
+
+      <button aria-label="생각 11개" style="position: absolute; left: 13%; top: 14%; width: 30%; height: 28%; background: none; border: none; cursor: pointer; padding: 0;"></button>
+      <button aria-label="책 2권" style="position: absolute; left: 54%; top: 9%; width: 32%; height: 74%; background: none; border: none; cursor: pointer; padding: 0;"></button>
+    </div>
+  </div>
+
+  <div style="padding: 0 20px 18px 20px; flex-shrink: 0;">
+    <div style="height: 1px; background: #DCD5C4; margin-bottom: 18px;"></div>
+    <div style="display: flex; align-items: center; gap: 15px;">
+      <img src="cover-dokseo.webp" alt="" style="width: 52px; height: 74px; object-fit: cover; flex-shrink: 0; border-radius: 3px; box-shadow: 0 3px 10px rgba(46,52,38,0.16);">
+      <div style="display: flex; flex-direction: column; gap: 7px; flex-grow: 1; min-width: 0;">
+        <span style="height: 24px; padding: 0 11px; background: #D7E3CE; color: #42604A; border-radius: 999px; font-size: 11px; font-weight: 500; display: inline-flex; align-items: center; align-self: flex-start;">읽는 중</span>
+        <span style="font-family: 'Gowun Batang', serif; font-weight: 700; font-size: 18px; line-height: 1.35; color: #2E3A2C;">독서의 기술</span>
+      </div>
+      <button style="height: 44px; padding: 0 17px; flex-shrink: 0; background: #42604A; color: #F1EEDE; box-shadow: 0 3px 10px rgba(70,74,58,0.18); border: none; border-radius: 999px; font-family: 'IBM Plex Sans KR', sans-serif; font-size: 13px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 7px;">
+        이어가기
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#F2EEDF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 5.5l7 6.5-7 6.5"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <div style="display: flex; border-top: 1px solid #DCD5C4; padding: 12px 0 26px 0; flex-shrink: 0;">
+    <button style="flex-grow: 1; background: none; border: none; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 0;">
+      <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="#42604A" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11.2 12 4.6l8 6.6V20H4z"/><path d="M10 20v-5h4v5"/></svg>
+      <span style="font-family: 'Gowun Batang', serif; font-size: 12.5px; font-weight: 700; color: #42604A;">방</span>
+      <span style="width: 22px; height: 1.5px; background: #42604A; margin-top: -3px;"></span>
+    </button>
+    <button style="flex-grow: 1; background: none; border: none; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 0;">
+      <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="#9AA08F" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h6v14H4zM12 5h5l3 14h-5z"/></svg>
+      <span style="font-family: 'Gowun Batang', serif; font-size: 12.5px; color: #9AA08F;">책장</span>
+    </button>
+    <button style="flex-grow: 1; background: none; border: none; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 0;">
+      <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="#9AA08F" stroke-width="1.4" stroke-linecap="round"><path d="M12 21V11"/><path d="M12 14C8 14 5 11 5 6.5 9 6.5 12 9.5 12 14z"/><path d="M12 14c4 0 7-3 7-7.5-4 0-7 3-7 7.5z"/></svg>
+      <span style="font-family: 'Gowun Batang', serif; font-size: 12.5px; color: #9AA08F;">생각</span>
+    </button>
+  </div>
+
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"$preview":{"width":375,"height":812}}'>
+class Component extends DCLogic {}
+</script>
+</body>
+</html>

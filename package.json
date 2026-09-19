@@ -1,0 +1,10 @@
+{
+  "name": "reading-notebook",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server/dev.mjs",
+    "test": "node --test tests/core.test.mjs"
+  },
+  "engines": { "node": ">=20" }
+}

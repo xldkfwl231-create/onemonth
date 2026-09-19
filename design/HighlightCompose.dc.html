@@ -1,0 +1,69 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=IBM+Plex+Sans+KR:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <style>
+    body { margin: 0; }
+    a { color: #B87423; text-decoration: none; }
+    a:hover { color: #8E5818; }
+  </style>
+</helmet>
+
+<div style="width: 375px; height: 812px; background: #E9ECF1; color: #1E2838; font-family: 'IBM Plex Sans KR', -apple-system, sans-serif; font-weight: 300; display: flex; flex-direction: column; justify-content: flex-end; overflow: hidden; position: relative;">
+
+  <div style="position: absolute; inset: 0; background: #1E2838; opacity: 0.38;"></div>
+
+  <div style="position: relative; background: #E9ECF1; border-top: 1px solid #C9D0DA; border-radius: 8px 8px 0 0; display: flex; flex-direction: column; gap: 20px; padding: 12px 20px 26px 20px;">
+
+    <div style="width: 36px; height: 3px; background: #C9D0DA; border-radius: 2px; align-self: center;"></div>
+
+    <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 12px;">
+      <div style="display: flex; flex-direction: column; gap: 4px; min-width: 0;">
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; letter-spacing: 0.14em; color: #8A94A6;">밑줄 넣기</span>
+        <span style="font-family: 'Gowun Batang', serif; font-weight: 700; font-size: 17px; color: #1E2838;">사피엔스</span>
+      </div>
+      <button style="height: 44px; padding: 0 4px; background: none; border: none; color: #8A94A6; font-family: 'IBM Plex Sans KR', sans-serif; font-size: 13px; cursor: pointer;">취소</button>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 9px;">
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; letter-spacing: 0.12em; color: #8A94A6;">걸린 문장</span>
+      <div style="background: #F3F5F8; border: 1px solid #B87423; border-radius: 3px; padding: 14px; min-height: 108px; display: flex;">
+        <span style="font-family: 'Gowun Batang', serif; font-size: 15.5px; line-height: 1.78; color: #1E2838; text-wrap: pretty;">편해지는 쪽으로 바뀐 게 아니라, 더 많이 감당하는 쪽으로 바뀌었다.</span>
+      </div>
+    </div>
+
+    <div style="display: flex; gap: 12px; align-items: flex-end;">
+      <div style="display: flex; flex-direction: column; gap: 9px; width: 104px; flex-shrink: 0;">
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; letter-spacing: 0.12em; color: #8A94A6;">페이지</span>
+        <div style="display: flex; align-items: center; height: 48px; background: #F3F5F8; border: 1px solid #C9D0DA; border-radius: 3px; padding: 0 13px;">
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-weight: 500; color: #1E2838;">203</span>
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 9px; flex-grow: 1; min-width: 0;">
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; letter-spacing: 0.12em; color: #8A94A6;">한 줄 메모 &middot; 선택</span>
+        <div style="display: flex; align-items: center; height: 48px; background: #F3F5F8; border: 1px solid #C9D0DA; border-radius: 3px; padding: 0 13px;">
+          <span style="font-size: 13px; color: #8A94A6; font-weight: 300;">떠오른 게 있으면</span>
+        </div>
+      </div>
+    </div>
+
+    <button style="width: 100%; height: 52px; background: #1E2838; color: #F3F5F8; border: none; border-radius: 3px; font-family: 'IBM Plex Sans KR', sans-serif; font-size: 14.5px; font-weight: 500; letter-spacing: 0.02em; cursor: pointer;">기록</button>
+
+    <p style="font-size: 11.5px; line-height: 1.65; color: #8A94A6; margin: -8px 0 0 0; text-align: center;">페이지는 지난번 다음 쪽으로 미리 채워집니다</p>
+
+  </div>
+
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"$preview":{"width":375,"height":812}}'>
+class Component extends DCLogic {}
+</script>
+</body>
+</html>

@@ -1,0 +1,102 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=IBM+Plex+Sans+KR:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+  <style>
+    body { margin: 0; }
+    a { color: #2F4A38; text-decoration: none; }
+    a:hover { color: #1E3324; }
+  </style>
+</helmet>
+
+<div style="width: 375px; height: 812px; background: #F6F2E8; color: #262A22; font-family: 'IBM Plex Sans KR', -apple-system, sans-serif; font-weight: 300; display: flex; flex-direction: column; overflow: hidden;">
+
+  <div style="display: flex; align-items: center; justify-content: space-between; padding: 14px 8px 0 8px; flex-shrink: 0;">
+    <button style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; background: none; border: none; cursor: pointer; padding: 0;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5C6154" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
+    </button>
+    <span style="font-size: 12px; color: #96988A;">독서의 기술</span>
+    <button style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; background: none; border: none; cursor: pointer; padding: 0;">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#5C6154" stroke-width="1.7" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/></svg>
+    </button>
+  </div>
+
+  <div style="display: flex; gap: 22px; padding: 14px 20px 0 20px; flex-shrink: 0; border-bottom: 1px solid #E2DCCC;">
+    <button style="background: none; border: none; padding: 0 0 12px 0; cursor: pointer; display: flex; align-items: baseline; gap: 5px;">
+      <span style="font-family: 'Gowun Batang', serif; font-size: 16px; font-weight: 400; color: #96988A;">문장</span>
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #96988A;">23</span>
+    </button>
+    <button style="background: none; border: none; padding: 0 0 12px 0; cursor: pointer; display: flex; align-items: baseline; gap: 5px; border-bottom: 2px solid #2F4A38; margin-bottom: -1px;">
+      <span style="font-family: 'Gowun Batang', serif; font-size: 16px; font-weight: 700; color: #262A22;">질문</span>
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; color: #2F4A38;">3</span>
+    </button>
+  </div>
+
+  <div style="flex-grow: 1; padding: 18px 20px 0 20px; display: flex; flex-direction: column; gap: 13px; overflow: hidden;">
+
+    <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; letter-spacing: 0.14em; color: #96988A;">아직 답이 없는 질문 &middot; 2</span>
+
+    <div style="background: #FCFAF3; border: 1px solid #E2DCCC; border-radius: 3px; padding: 16px 16px 14px 16px; display: flex; flex-direction: column; gap: 12px;">
+      <div style="display: flex; gap: 11px; align-items: flex-start;">
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 600; color: #2F4A38; flex-shrink: 0; padding-top: 2px;">Q</span>
+        <p style="font-family: 'Gowun Batang', serif; font-size: 15px; line-height: 1.72; color: #262A22; margin: 0; text-wrap: pretty;">YouTube 영상보다 책이 나에게 이점이 되는 이유는?</p>
+      </div>
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-left: 23px;">
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #C6C2B2;">8/4에 물음 &middot; 39일째</span>
+        <button style="height: 34px; padding: 0 13px; background: none; color: #2F4A38; border: 1px solid #C3CFBC; border-radius: 999px; font-family: 'IBM Plex Sans KR', sans-serif; font-size: 11.5px; font-weight: 500; cursor: pointer;">답 쓰기</button>
+      </div>
+    </div>
+
+    <div style="background: #FCFAF3; border: 1px solid #E2DCCC; border-radius: 3px; padding: 16px 16px 14px 16px; display: flex; flex-direction: column; gap: 12px;">
+      <div style="display: flex; gap: 11px; align-items: flex-start;">
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 600; color: #2F4A38; flex-shrink: 0; padding-top: 2px;">Q</span>
+        <p style="font-family: 'Gowun Batang', serif; font-size: 15px; line-height: 1.72; color: #262A22; margin: 0; text-wrap: pretty;">짜릿한 쾌감 중 하나는, 내가 알고 있거나 봤던 것을 다른 곳에서 우연히 접할 때 나오는 게 아닐까?</p>
+      </div>
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-left: 23px;">
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #C6C2B2;">8/15에 물음 &middot; 28일째</span>
+        <button style="height: 34px; padding: 0 13px; background: none; color: #2F4A38; border: 1px solid #C3CFBC; border-radius: 999px; font-family: 'IBM Plex Sans KR', sans-serif; font-size: 11.5px; font-weight: 500; cursor: pointer;">답 쓰기</button>
+      </div>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 10px; padding-top: 6px;">
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; letter-spacing: 0.14em; color: #96988A;">답을 단 질문 &middot; 1</span>
+      <span style="height: 1px; background: #E2DCCC; flex-grow: 1;"></span>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 12px;">
+      <div style="display: flex; gap: 11px; align-items: flex-start;">
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 600; color: #96988A; flex-shrink: 0; padding-top: 2px;">Q</span>
+        <p style="font-family: 'Gowun Batang', serif; font-size: 15px; line-height: 1.72; color: #5C6154; margin: 0; text-wrap: pretty;">핸드폰이 안 좋은 이유가 행동이 동반되지 않아서라면, 전자책은 어떤가? 집을 나서서 전자책을 읽는 행위는?</p>
+      </div>
+      <div style="display: flex; gap: 11px; align-items: flex-start;">
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 600; color: #2F4A38; flex-shrink: 0; padding-top: 2px;">A</span>
+        <div style="display: flex; flex-direction: column; gap: 7px; min-width: 0;">
+          <p style="font-size: 13.5px; line-height: 1.72; color: #262A22; margin: 0; text-wrap: pretty;">책장을 넘기고 손으로 만지고 책의 향기를 느끼는 활동이 없어, 전자책도 행동을 동반하지만 책 만큼은 아님.</p>
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #C6C2B2;">8/15에 물어 같은 날 답함 &middot; 바로 나옴</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div style="padding: 10px 20px 30px 20px; flex-shrink: 0;">
+    <button style="width: 100%; height: 52px; background: #2F4A38; color: #F6F2E8; border: none; border-radius: 3px; font-family: 'IBM Plex Sans KR', sans-serif; font-size: 14.5px; font-weight: 500; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#F6F2E8" stroke-width="1.9" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+      질문 넣기
+    </button>
+  </div>
+
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"$preview":{"width":375,"height":812}}'>
+class Component extends DCLogic {}
+</script>
+</body>
+</html>

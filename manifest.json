@@ -1,10 +1,10 @@
 {
-  "name": "기록장",
+  "name": "기록장 · 읽고 남은 것들",
   "short_name": "기록장",
   "start_url": "./index.html",
   "display": "standalone",
-  "background_color": "#E9ECF1",
-  "theme_color": "#E9ECF1",
+  "background_color": "#F6F2E8",
+  "theme_color": "#F6F2E8",
   "icons": [
     {
       "src": "icon.svg",
