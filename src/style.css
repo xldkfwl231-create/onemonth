@@ -73,3 +73,14 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
   .navigation{overflow:hidden}
   .navigation a{font-size:12px;padding:10px 2px;min-width:0}
 }
+
+/* ── 문장 날짜 접기 ─────────────────────────────────────────── */
+.day{border-bottom:1px solid var(--line)}
+.day:last-child{border-bottom:0}
+.day-head{display:flex;align-items:center;gap:9px;width:100%;min-height:46px;padding:0;border:0;background:none;text-align:left}
+.day-head:hover{border:0}
+.day-chevron{width:13px;flex:0 0 13px;color:var(--green);font-size:13px;line-height:1}
+.day-label{font:600 12.5px var(--sans);letter-spacing:.04em;color:var(--muted)}
+.day.open .day-label{color:var(--ink)}
+.day-count{margin-left:auto;font:500 11.5px var(--sans);color:var(--muted)}
+.day-body{padding:2px 0 16px 22px;display:flex;flex-direction:column;gap:14px}

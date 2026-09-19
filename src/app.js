@@ -6,6 +6,7 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 let state = emptyState(), db, revision = 0, busy = false, ready = false;
 let filter = 'all', query = '', entryTab = 'entries', questionFilter = 'open';
+let collapsed = new Set(), foldBook = '';   // 접어둔 날짜 (문장 목록)
 let toastTimer, undoAction, modalCleanup = () => {}, draftKey = '', modalDirty = false, modalFocus;
 const dialog = $('#editor');
 const channel = 'BroadcastChannel' in window ? new BroadcastChannel('reading-notebook') : null;
@@ -105,12 +106,37 @@ function recordCard(e, b, type, showBook = false) {
   const question = type === 'questions';
   return `<article class="record ${question && e.answer ? 'answered' : ''}"><div class="meta"><span>${showBook ? `<a href="#book/${b.id}">${esc(b.title)}</a> · ` : ''}${esc(dateLabel(e.createdAt))}${!question && e.page ? ` · p. ${esc(e.page)}` : ''}</span>${question ? `<span class="q-label">${e.answer ? '답을 남긴 질문' : '아직 품고 있는 질문'}</span>` : '<span aria-hidden="true">문장</span>'}</div><p class="record-text">${esc(e.text)}</p>${e.note ? `<p class="note">${esc(e.note)}</p>` : ''}${question && e.answer ? `<p class="answer">${esc(e.answer)}</p><p class="hint">${esc(dateLabel(e.answeredAt))}에 남긴 답</p>` : ''}<div class="record-actions">${question ? `<button data-action="answer" data-book="${b.id}" data-id="${e.id}">${e.answer ? '답 수정' : '답 남기기'}</button>` : ''}<button data-action="edit-record" data-type="${type}" data-book="${b.id}" data-id="${e.id}">수정</button><button data-action="delete-record" data-type="${type}" data-book="${b.id}" data-id="${e.id}">삭제</button></div></article>`;
 }
+// 문장을 날짜로 묶고, 날짜 줄을 눌러 접었다 폅니다.
+function groupedRecords(records, b, type) {
+  const groups = [];
+  for (const e of [...records].reverse()) {
+    const key = e.createdAt || '';
+    const last = groups[groups.length - 1];
+    if (last && last.key === key) last.items.push(e); else groups.push({ key, items: [e] });
+  }
+  return groups.map(g => {
+    const isOpen = !collapsed.has(g.key);
+    return `<section class="day ${isOpen ? 'open' : ''}">
+      <button class="day-head" data-day="${esc(g.key)}" aria-expanded="${isOpen}">
+        <span class="day-chevron" aria-hidden="true">${isOpen ? '⌄' : '›'}</span>
+        <span class="day-label">${esc(dateLabel(g.key))}</span>
+        <span class="day-count">${g.items.length}</span>
+      </button>
+      ${isOpen ? `<div class="day-body">${g.items.map(e => recordCard(e, b, type)).join('')}</div>` : ''}
+    </section>`;
+  }).join('');
+}
 function renderBook() {
   const b = currentBook();
   if (!b) { $('#main').innerHTML = empty('책을 찾을 수 없어요', '책장에서 다른 책을 골라주세요.', '<a class="back" href="#shelf">← 책장으로</a>'); return; }
+  if (foldBook !== b.id) {   // 책을 새로 열면 맨 위 날짜만 펴둡니다
+    foldBook = b.id;
+    const days = [...new Set([...b.entries].reverse().map(e => e.createdAt || ''))];
+    collapsed = new Set(days.slice(1));
+  }
   const activeQuery = query.trim();
   const records = b[entryTab].filter(e => !activeQuery || [e.text,e.note || '',e.answer || '',e.page || ''].some(t => t.toLowerCase().includes(activeQuery.toLowerCase())));
-  $('#main').innerHTML = `<div class="narrow"><a class="back" href="#shelf">← 책장으로</a><section class="book-hero" aria-labelledby="book-title">${cover(b)}<span class="status-tag">${b.status === 'finished' ? '다 읽음' : '읽는 중'}</span><h1 id="book-title">${esc(b.title)}</h1><p class="book-sub">${esc([b.author,b.publisher].filter(Boolean).join(' · ') || '나만의 독서 기록')}</p><p class="book-sub small">${esc(dateLabel(b.createdAt))}부터${b.finishedAt ? ` · ${esc(dateLabel(b.finishedAt))} 완독` : ''}</p><div class="actions"><button data-action="edit-book">책 정보 수정</button><button data-action="toggle-status">${b.status === 'finished' ? '다시 읽기' : '다 읽었어요'}</button></div></section><div class="kind-cards"><button class="kind entries" data-entry-tab="entries" aria-pressed="${entryTab === 'entries'}"><span class="kind-mark" aria-hidden="true">&ldquo;</span><b>문장</b><span class="kind-count">${b.entries.length}</span><i></i><span class="kind-go" aria-hidden="true">→</span></button><button class="kind questions" data-entry-tab="questions" aria-pressed="${entryTab === 'questions'}"><span class="kind-mark" aria-hidden="true">?</span><b>질문</b><span class="kind-count">${b.questions.length}${b.questions.filter(q => q.answer).length ? ` · 답 ${b.questions.filter(q => q.answer).length}` : ''}</span><i></i><span class="kind-go" aria-hidden="true">→</span></button></div><div class="toolbar record-toolbar"><button class="primary" data-action="add-record">＋ ${entryTab === 'entries' ? '문장' : '질문'} 남기기</button></div>${activeQuery ? `<p class="search-count">“${esc(query)}” 검색 중 <button class="quiet" data-action="clear-query">검색 해제</button></p>` : ''}<div class="record-list">${records.length ? [...records].reverse().map(e => recordCard(e,b,entryTab)).join('') : empty(activeQuery ? '일치하는 기록이 없어요' : entryTab === 'entries' ? '오래 두고 싶은 문장' : '서둘러 답하지 않아도 괜찮아요', activeQuery ? '검색을 해제하면 모든 기록이 보입니다.' : entryTab === 'entries' ? '읽다가 걸린 문장과 그때의 생각을 남겨보세요.' : '읽다가 생긴 물음을 적어두고, 나중의 나에게 건네보세요.')}</div><p class="section-note"><button class="quiet danger" data-action="delete-book">이 책 삭제</button></p></div>`;
+  $('#main').innerHTML = `<div class="narrow"><a class="back" href="#shelf">← 책장으로</a><section class="book-hero" aria-labelledby="book-title">${cover(b)}<span class="status-tag">${b.status === 'finished' ? '다 읽음' : '읽는 중'}</span><h1 id="book-title">${esc(b.title)}</h1><p class="book-sub">${esc([b.author,b.publisher].filter(Boolean).join(' · ') || '나만의 독서 기록')}</p><p class="book-sub small">${esc(dateLabel(b.createdAt))}부터${b.finishedAt ? ` · ${esc(dateLabel(b.finishedAt))} 완독` : ''}</p><div class="actions"><button data-action="edit-book">책 정보 수정</button><button data-action="toggle-status">${b.status === 'finished' ? '다시 읽기' : '다 읽었어요'}</button></div></section><div class="kind-cards"><button class="kind entries" data-entry-tab="entries" aria-pressed="${entryTab === 'entries'}"><span class="kind-mark" aria-hidden="true">&ldquo;</span><b>문장</b><span class="kind-count">${b.entries.length}</span><i></i><span class="kind-go" aria-hidden="true">→</span></button><button class="kind questions" data-entry-tab="questions" aria-pressed="${entryTab === 'questions'}"><span class="kind-mark" aria-hidden="true">?</span><b>질문</b><span class="kind-count">${b.questions.length}${b.questions.filter(q => q.answer).length ? ` · 답 ${b.questions.filter(q => q.answer).length}` : ''}</span><i></i><span class="kind-go" aria-hidden="true">→</span></button></div><div class="toolbar record-toolbar">${entryTab === 'entries' && b.entries.length ? `<button class="quiet" data-action="fold-all">${collapsed.size ? '모두 펼치기' : '모두 접기'}</button>` : ''}<button class="primary" data-action="add-record">＋ ${entryTab === 'entries' ? '문장' : '질문'} 남기기</button></div>${activeQuery ? `<p class="search-count">“${esc(query)}” 검색 중 <button class="quiet" data-action="clear-query">검색 해제</button></p>` : ''}<div class="record-list">${records.length ? (entryTab === 'entries' ? groupedRecords(records,b,entryTab) : [...records].reverse().map(e => recordCard(e,b,entryTab)).join('')) : empty(activeQuery ? '일치하는 기록이 없어요' : entryTab === 'entries' ? '오래 두고 싶은 문장' : '서둘러 답하지 않아도 괜찮아요', activeQuery ? '검색을 해제하면 모든 기록이 보입니다.' : entryTab === 'entries' ? '읽다가 걸린 문장과 그때의 생각을 남겨보세요.' : '읽다가 생긴 물음을 적어두고, 나중의 나에게 건네보세요.')}</div><p class="section-note"><button class="quiet danger" data-action="delete-book">이 책 삭제</button></p></div>`;
 }
 function renderQuestions() {
   const qs = state.books.flatMap(b => b.questions.map(q => ({ b, q }))).filter(({q}) => questionFilter === 'all' || (questionFilter === 'open' ? !q.answer : !!q.answer)).reverse();
@@ -320,6 +346,8 @@ document.addEventListener('click', e => {
   const btn = e.target.closest('button'); if (!btn) return;
   if (btn.dataset.filter) { filter = btn.dataset.filter; renderShelf(); }
   if (btn.dataset.entryTab) { entryTab = btn.dataset.entryTab; renderBook(); }
+  if (btn.dataset.day !== undefined) { const k = btn.dataset.day; collapsed.has(k) ? collapsed.delete(k) : collapsed.add(k); renderBook(); return; }
+  if (btn.dataset.action === 'fold-all') { const b = currentBook(); if (b) { const all = new Set(b.entries.map(e => e.createdAt || '')); collapsed = collapsed.size ? new Set() : all; renderBook(); } return; }
   if (btn.dataset.questionFilter) { questionFilter = btn.dataset.questionFilter; renderQuestions(); }
   const {action,id,book,type} = btn.dataset;
   switch(action) {
