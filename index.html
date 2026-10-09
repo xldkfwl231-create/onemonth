@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#F6F2E8">
-  <meta name="description" content="읽다가 머문 문장, 오래 품은 질문. 나만의 조용한 독서 기록장.">
+  <meta name="description" content="나를 닮은 고양이 한 마리를 거짓 없이 관찰하는 기록장.">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <title>기록장 · 읽고 남은 것들</title>
+  <title>나만의 고양이 찾기</title>
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="src/style.css">
@@ -15,13 +15,13 @@
   <a class="skip" href="#main">본문으로</a>
   <div class="shell">
     <header class="masthead">
-      <a class="brand" href="#shelf" aria-label="기록장 책장"><span class="brand-symbol" aria-hidden="true">冊</span> 기록장<span class="brand-sub">읽고 남은 것들</span></a>
+      <a class="brand" href="#cat" aria-label="나만의 고양이 찾기 첫 화면"><span class="brand-symbol" aria-hidden="true">猫</span> 나만의 고양이 찾기<span class="brand-sub">본 대로, 거짓 없이</span></a>
       <button class="quiet" id="settings" aria-label="백업과 보관 설정">보관함 <span aria-hidden="true">↗</span></button>
     </header>
     <nav class="navigation" aria-label="주 메뉴">
-      <a href="#room" data-nav="room">방</a>
+      <a href="#cat" data-nav="cat">고양이</a>
+      <a href="#day" data-nav="day">하루</a>
       <a href="#shelf" data-nav="shelf">책장</a>
-      <a href="#questions" data-nav="questions">질문</a>
       <a href="#thoughts" data-nav="thoughts">생각</a>
     </nav>
     <main id="main" tabindex="-1"><p class="empty">기록을 불러오고 있습니다.</p></main>
@@ -29,7 +29,7 @@
   </div>
   <dialog id="editor" aria-labelledby="dialog-title"><div id="dialog-content"></div></dialog>
   <div id="toast" role="status" hidden></div>
-  <noscript>기록장을 사용하려면 브라우저에서 JavaScript를 켜주세요.</noscript>
+  <noscript>나만의 고양이 찾기를 사용하려면 브라우저에서 JavaScript를 켜주세요.</noscript>
   <script type="module" src="src/app.js"></script>
 </body>
 </html>

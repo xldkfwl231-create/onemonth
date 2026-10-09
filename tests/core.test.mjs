@@ -1,11 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalize, backup, matchesBook, dateLabel, safeCover, emptyState } from '../src/core.js';
+import { normalize, backup, matchesBook, dateLabel, dayKey, safeCover, emptyState, emptyDay, nextQuestion, dayOf, catMood, sleepMinutes } from '../src/core.js';
 const old = () => ({books:[{t:'독서의 기술',s:'8/1',e:[{l:'오래 남은 문장',d:'8/2'}]}],thoughts:[{t:'생각',d:'8/3'}],trips:[{p:'통영',n:'바다'}],cur:0});
 test('legacy migration preserves every record, original dates and original input',() => {
   const input = old(), copy = structuredClone(input), s = normalize(input);
-  assert.deepEqual(input,copy); assert.equal(s.books[0].entries[0].text,'오래 남은 문장'); assert.equal(s.thoughts[0].text,'생각'); assert.equal(s.trips[0].place,'통영'); assert.equal(s.books[0].createdAt,'8/1');
-  assert.equal(new Set([s.books[0].id,s.books[0].entries[0].id,s.thoughts[0].id,s.trips[0].id]).size,4);
+  assert.deepEqual(input,copy); assert.equal(s.books[0].entries[0].text,'오래 남은 문장'); assert.equal(s.thoughts[0].text,'생각'); assert.equal(s.moments[0].place,'통영'); assert.equal(s.moments[0].text,'바다'); assert.equal(s.books[0].createdAt,'8/1');
+  assert.equal(new Set([s.books[0].id,s.books[0].entries[0].id,s.thoughts[0].id,s.moments[0].id]).size,4);
 });
 test('old single-line book migrates',() => { const s = normalize({books:[{t:'책',l:'문장',d:'1/2'}]}); assert.equal(s.books[0].entries[0].text,'문장'); });
 test('complete backup round trip includes uploaded covers, answers, notes and years',() => {
@@ -13,7 +13,7 @@ test('complete backup round trip includes uploaded covers, answers, notes and ye
   assert.deepEqual(normalize(JSON.parse(backup(s))),s);
 });
 test('malformed restores are rejected instead of wiping existing state',() => {
-  for (const bad of [{},null,[],{thoughts:'oops'},{books:[null]},{books:[{t:'책',e:{}}]},{books:[{t:'책',e:[{}]}]},{books:[],thoughts:[{}]},{version:3,books:[]}]) assert.throws(() => normalize(bad));
+  for (const bad of [{},null,[],{thoughts:'oops'},{books:[null]},{books:[{t:'책',e:{}}]},{books:[{t:'책',e:[{}]}]},{books:[],thoughts:[{}]},{version:3,books:[]},{version:4,books:[]}]) assert.throws(() => normalize(bad));
   const s=normalize(old()); s.books[0].entries[0].id=s.books[0].id; assert.throws(() => normalize(s),/ID/);
 });
 test('restored cover URLs reject executable or malformed schemes',() => {
@@ -26,4 +26,45 @@ test('search finds text, author, page, personal notes and answers',() => {
   assert.equal(matchesBook(b,'존재하지 않음'),false);
 });
 test('legacy dates do not invent a year',() => { assert.equal(dateLabel('8/1'),'8/1 · 이전 기록'); assert.match(dateLabel('2026-09-14T12:00:00Z'),/2026/); });
-test('empty v2 state is a valid backup',() => { assert.deepEqual(normalize(JSON.parse(backup(emptyState()))),emptyState()); });
+test('empty state is a valid backup',() => { assert.deepEqual(normalize(JSON.parse(backup(emptyState()))),emptyState()); });
+test('records from the same day share one date group',() => {
+  const a = new Date(2026,8,19,9,0).toISOString(), b = new Date(2026,8,19,23,30).toISOString(), c = new Date(2026,8,20,0,10).toISOString();
+  assert.equal(dayKey(a),dayKey(b)); assert.notEqual(dayKey(b),dayKey(c));
+  assert.equal(dayKey('8/1'),'8/1'); assert.equal(dayKey(''),'');
+});
+test('version 2 backups move into version 3 without losing records',() => {
+  const v2 = {version:2,books:[{id:'b',title:'책',status:'reading',entries:[{id:'e',text:'문장',createdAt:'2026-09-19T01:00:00.000Z'}],questions:[{id:'q',text:'왜?'}]}],thoughts:[{id:'t',text:'생각',createdAt:''}],trips:[{id:'r',place:'통영',text:'바다',createdAt:''}]};
+  const s = normalize(v2);
+  assert.equal(s.version,3); assert.equal(s.books[0].entries[0].id,'e'); assert.equal(s.books[0].questions[0].id,'q'); assert.equal(s.thoughts[0].id,'t');
+  assert.deepEqual(s.moments.map(m => [m.id,m.place,m.text]),[['r','통영','바다']]);
+  assert.deepEqual(normalize(JSON.parse(backup(s))),s);
+});
+test('malformed day records are rejected',() => {
+  const base = () => { const s = emptyState(); s.days.push(emptyDay('2026-09-30')); return s; };
+  let s = base(); s.days[0].commute.feel = 'nope'; assert.throws(() => normalize(s));
+  s = base(); s.days[0].wakeAt = '25:00'; assert.throws(() => normalize(s));
+  s = base(); s.days.push(emptyDay('2026-09-30')); assert.throws(() => normalize(s));
+  s = base(); s.days[0].commute.feel = 'quiet'; s.days[0].sleepSat = 4; assert.deepEqual(normalize(s),s);
+});
+test('the cat asks the current time slot first, skips what was skipped, and stops when done',() => {
+  const s = emptyState(), at = (h,m=0) => new Date(2026,8,30,h,m);   // 수요일
+  assert.equal(nextQuestion(s,at(7,30)).key,'wakeAt');
+  assert.equal(nextQuestion(s,at(9)).key,'commute.ride');
+  const d = emptyDay('2026-09-30'); s.days.push(d);
+  d.commute.ride = 'home'; d.skipped.push('morning');
+  assert.equal(nextQuestion(s,at(9)).type,'moment');          // 재택이면 출근길은 더 묻지 않는다
+  d.skipped.pop(); assert.equal(nextQuestion(s,at(9)).type,'catchup');   // 지나간 아침 칸은 먼저 물어보고
+  assert.equal(nextQuestion(s,at(9),true).key,'wakeAt');                 // 되짚기로 하면 그때 묻는다
+  d.skipped.push('catchup'); assert.equal(nextQuestion(s,at(9)).type,'moment');
+  d.skipped.push('prompt'); assert.equal(nextQuestion(s,at(9)),null);
+  assert.equal(nextQuestion(s,at(18)).key,'work.grain');
+  s.profile.tone = 'you'; assert.match(nextQuestion(s,at(18)).text,/어\?$/);
+  s.profile.workdays = []; assert.equal(nextQuestion(s,at(18)).key,'rest.place');
+});
+test('late night belongs to the previous day; mood and sleep follow the record',() => {
+  assert.equal(dayOf(new Date(2026,8,30,2,0)),'2026-09-29'); assert.equal(dayOf(new Date(2026,8,30,5,0)),'2026-09-30');
+  const a = emptyDay('2026-09-29'), b = emptyDay('2026-09-30');
+  a.bedAt = '23:30'; b.wakeAt = '07:00'; assert.equal(sleepMinutes(a,b),450);
+  a.bedAt = '01:00'; assert.equal(sleepMinutes(a,b),360);
+  b.sleepSat = 1; assert.equal(catMood(b),'sleepy'); b.daySat = 5; assert.equal(catMood(b),'happy');
+});

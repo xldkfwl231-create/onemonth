@@ -1,6 +1,6 @@
 {
-  "name": "기록장 · 읽고 남은 것들",
-  "short_name": "기록장",
+  "name": "나만의 고양이 찾기",
+  "short_name": "나만의 고양이",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#F6F2E8",

@@ -1,8 +1,9 @@
-import { uid, now, emptyState, normalize, backup, stats, matchesBook, dateLabel, safeCover } from './core.js';
+import { uid, now, emptyState, normalize, backup, stats, matchesBook, dateLabel, dayKey, safeCover, FIELDS, ENERGY, WITH, CHOSEN, emptyDay, getField, setField, dayOf, slotsFor, nextQuestion, catMood, sleepMinutes, scaleLabel, isIso } from './core.js';
+import { catSvg } from './cat.js';
 import { openStore, load, commit, previous } from './storage.js';
 import { BOOK_SEARCH_ENDPOINT } from './config.js';
 
-const BUILD = '0919d';   // 폰에서 어떤 판을 보고 있는지 확인용
+const BUILD = '0930a';   // 폰에서 어떤 판을 보고 있는지 확인용
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 let state = emptyState(), db, revision = 0, busy = false, ready = false;
@@ -41,18 +42,21 @@ function cover(b) {
 }
 document.addEventListener('error', e => { if (e.target instanceof HTMLImageElement) { e.target.hidden = true; e.target.parentElement.querySelector('.cover-fallback')?.removeAttribute('aria-hidden'); } }, true);
 const empty = (title, message, action = '') => `<div class="empty"><div class="empty-illustration" aria-hidden="true"><i></i><i></i><i></i></div><h2>${title}</h2><p>${message}</p>${action}</div>`;
-function route() { const [page, id] = location.hash.slice(1).split('/'); return { page: page || 'room', id }; }
+function route() { const [page, id] = location.hash.slice(1).split('/'); return { page: page || 'cat', id }; }
 const currentBook = () => state.books.find(b => b.id === route().id);
 function render() {
   if (!ready) return;
   const { page } = route();
-  document.querySelectorAll('[data-nav]').forEach(a => { if (a.dataset.nav === (page === 'book' ? 'shelf' : page)) a.setAttribute('aria-current','page'); else a.removeAttribute('aria-current'); });
+  const tab = { book:'shelf', questions:'shelf', shelf:'shelf', day:'day', moments:'day', trips:'day', thoughts:'thoughts' }[page] || 'cat';
+  document.querySelectorAll('[data-nav]').forEach(a => { if (a.dataset.nav === tab) a.setAttribute('aria-current','page'); else a.removeAttribute('aria-current'); });
   document.body.dataset.page = page;
   if (page === 'book') renderBook();
   else if (page === 'questions') renderQuestions();
-  else if (page === 'thoughts' || page === 'trips') renderJournal(page);
+  else if (page === 'thoughts') renderThoughts();
   else if (page === 'shelf') renderShelf();
-  else renderRoom();
+  else if (page === 'day') renderDay();
+  else if (page === 'moments' || page === 'trips') renderMoments();
+  else renderCat();
 }
 
 // 책장 그림 안의 칸 좌표 — 빈 방 일러스트(4:3)에서 직접 잰 값입니다.
@@ -66,19 +70,54 @@ function spines(books) {
       style="left:${left}%;bottom:${shelf}%;height:${h}%;background:${SPINE[b.color] || SPINE.forest}"></a>`;
   }).join('');
 }
-function renderRoom() {
+// ── 고양이 · 하루 · 순간 ─────────────────────────────────────
+const say = pair => pair[state.profile.tone === 'you' ? 1 : 0];
+const todayKey = () => dayOf(new Date());
+let catchUp = '';   // 지나간 칸을 되짚기로 한 날
+const dayRecord = date => state.days.find(d => d.date === date) || emptyDay(date);
+const momentsOn = date => state.moments.filter(m => isIso(m.createdAt) && dayOf(new Date(m.createdAt)) === date);
+const labelOf = (options, value) => options.find(o => o[0] === value)?.[1] || '';
+const chips = (options, current, attrs) => options.map(([v, l]) => `<button class="chip" ${attrs} data-value="${v}" aria-pressed="${current === v}">${esc(l)}</button>`).join('');
+const SCALE = [1, 2, 3, 4, 5].map(n => [n, String(n)]);
+function setDay(date, edit) {
+  return change(s => { let d = s.days.find(x => x.date === date); if (!d) { d = emptyDay(date); s.days.push(d); } edit(d); }, '');
+}
+function shiftDate(date, n) { const d = new Date(`${date}T12:00:00`); d.setDate(d.getDate() + n); return dayKey(d.toISOString()); }
+function bubble() {
+  if (!state.profile.catName) return `<div class="bubble"><p class="bubble-text">안녕. 나는 아직 이름이 없는 고양이야. 이름을 지어 줄래?</p><div class="bubble-actions"><button class="primary" data-action="profile">이름 지어 주기</button></div></div>`;
+  const q = nextQuestion(state, new Date(), catchUp === todayKey());
+  if (!q) return `<div class="bubble done"><p class="bubble-text">${say(['오늘 관찰은 여기까지. 잘 지켜봤다.', '오늘 관찰은 여기까지야. 고마워.'])}</p></div>`;
+  let body;
+  if (q.type === 'choice') body = `<div class="chips">${chips(q.options, '', `data-action="cat-answer" data-key="${q.key}"`)}</div>`;
+  else if (q.type === 'scale') body = `<div class="chips scale">${chips(SCALE, 0, `data-action="cat-answer" data-key="${q.key}"`)}</div><p class="scale-ends"><span>${scaleLabel(1)}</span><span>${scaleLabel(5)}</span></p>`;
+  else if (q.type === 'time') {
+    const d = new Date(), value = q.key === 'wakeAt' ? state.profile.schedule.wake : `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    body = `<div class="time-row"><label class="visually-hidden" for="cat-time">시각</label><input type="time" id="cat-time" value="${value}"><button class="primary" data-action="cat-time" data-key="${q.key}">이때</button></div>`;
+  }
+  else if (q.type === 'catchup') body = `<div class="bubble-actions"><button class="primary" data-action="cat-catchup">이어서 답하기</button></div>`;
+  else if (q.type === 'book') body = `<div class="bubble-actions"><button class="primary" data-action="cat-book" data-book="${esc(q.bookId)}">문장 남기기</button></div>`;
+  else body = `<div class="bubble-actions"><button class="primary" data-action="cat-moment" data-prompt="${esc(q.text)}">적어 볼게</button></div>`;
+  return `<div class="bubble"><p class="bubble-slot">${esc(q.title)}</p><p class="bubble-text">${esc(q.text)}</p>${body}<button class="quiet skip-q" data-action="cat-skip" data-slot="${q.slot}">오늘은 넘어갈래</button></div>`;
+}
+function renderCat() {
+  const date = todayKey(), day = dayRecord(date), s = stats(state), name = state.profile.catName;
   const reading = state.books.filter(b => b.status === 'reading');
   const current = reading[reading.length - 1] || state.books[state.books.length - 1];
-  const today = new Date().toLocaleDateString('ko-KR', { year:'numeric', month:'2-digit', day:'2-digit' }).replace(/\.$/, '').replace(/\s/g, ' ');
-  $('#main').innerHTML = `<section class="room" aria-labelledby="room-title">
+  const seen = s.entries + s.questions + s.thoughts + s.moments + state.days.reduce((n, d) => n + FIELDS.filter(f => getField(d, f.key)).length, 0);
+  const today = new Date(`${date}T12:00:00`).toLocaleDateString('ko-KR', { year:'numeric', month:'long', day:'numeric', weekday:'short' });
+  $('#main').innerHTML = `<section class="room cat-home" aria-labelledby="room-title">
     <p class="room-date">${esc(today)}</p>
-    <h1 id="room-title">기록장</h1>
+    <h1 id="room-title">${esc(name || '나만의 고양이')}</h1>
+    <p class="cat-status">아직 돌아다니는 중 · 관찰 ${seen}개</p>
     <div class="room-scene">
       <img src="assets/room-empty.webp" alt="" width="2176" height="1632">
       ${spines(state.books)}
       <a class="hotspot board" href="#thoughts" aria-label="생각 ${state.thoughts.length}개"></a>
       <a class="hotspot shelf" href="#shelf" aria-label="책 ${state.books.length}권"></a>
+      <div class="cat-spot">${catSvg(catMood(day), esc(name || '고양이'))}</div>
     </div>
+    ${bubble()}
+    <div class="cat-actions"><button data-action="add-moment">＋ 순간 남기기</button><a class="text-link" href="#day">오늘 하루 <span aria-hidden="true">›</span></a></div>
     ${current ? `<div class="room-current">
       <a class="room-book" href="#book/${esc(current.id)}">${cover(current)}</a>
       <div class="room-meta">
@@ -87,31 +126,54 @@ function renderRoom() {
         <p class="muted">${esc([current.author, current.publisher].filter(Boolean).join(' · ') || '문장 ' + current.entries.length + ' · 질문 ' + current.questions.length)}</p>
       </div>
       <a class="primary continue" href="#book/${esc(current.id)}">이어가기 <span aria-hidden="true">›</span></a>
-    </div>` : `<div class="room-current empty-current">
-      <p>책장이 비어 있습니다.</p>
-      <button class="primary" data-action="add-book">첫 책 놓기</button>
-    </div>`}
-    <p class="room-aside"><a href="#trips">다녀온 자리 ${state.trips.length}</a></p>
+    </div>` : ''}
   </section>`;
 }
+function momentCard(m) {
+  const tags = [labelOf(ENERGY, m.energy), labelOf(WITH, m.with), labelOf(CHOSEN, m.chosen)].filter(Boolean);
+  return `<article class="record"><div class="meta"><span>${esc(dateLabel(m.createdAt))}${m.from === 'cat' ? ' · 고양이가 물어서' : ''}</span><span aria-hidden="true">순간</span></div>${m.place ? `<h3>${esc(m.place)}</h3>` : ''}<p class="record-text">${esc(m.text)}</p>${tags.length ? `<p class="tags">${tags.map(t => `<span class="status-tag">${esc(t)}</span>`).join('')}</p>` : ''}<div class="record-actions"><button data-action="edit-moment" data-id="${esc(m.id)}">수정</button><button data-action="delete-record" data-type="moments" data-id="${esc(m.id)}">삭제</button></div></article>`;
+}
+function dayField(f, day, date) {
+  const value = getField(day, f.key), attrs = `data-action="day-set" data-date="${date}" data-key="${f.key}"`, id = `d-${f.key.replace('.', '-')}`;
+  if (f.key.startsWith('commute.') && f.key !== 'commute.ride' && day.commute.ride === 'home') return '';
+  if (f.type === 'choice') return `<div class="slot-field"><p class="slot-label">${f.label}</p><div class="chips">${chips(f.options, value, attrs)}</div></div>`;
+  if (f.type === 'scale') return `<div class="slot-field"><p class="slot-label">${f.label}${value ? ` · ${scaleLabel(value)}` : ''}</p><div class="chips scale">${chips(SCALE, value, attrs)}</div></div>`;
+  return `<div class="slot-field"><label class="slot-label" for="${id}">${f.label}${f.type === 'text' ? ' · 선택' : ''}</label><input id="${id}" type="${f.type}" ${f.type === 'text' ? 'maxlength="300"' : ''} data-day-input="${f.key}" value="${esc(value)}"></div>`;
+}
+function renderDay() {
+  const today = todayKey(); let date = route().id;
+  if (!/^\d{4}-\d\d-\d\d$/.test(date || '') || date > today) date = today;
+  const day = dayRecord(date), sleep = sleepMinutes(state.days.find(d => d.date === shiftDate(date, -1)), day), list = momentsOn(date).reverse();
+  const title = new Date(`${date}T12:00:00`).toLocaleDateString('ko-KR', { month:'long', day:'numeric', weekday:'long' });
+  $('#main').innerHTML = `<div class="narrow"><div class="day-nav"><a href="#day/${shiftDate(date, -1)}" aria-label="전날">‹</a><div><p class="eyebrow">${date === today ? 'TODAY' : esc(date)}</p><h1>${esc(title)}</h1></div>${date < today ? `<a href="#day/${shiftDate(date, 1)}" aria-label="다음 날">›</a>` : '<span></span>'}</div>
+    <p class="hint day-hint">판단 없이, 본 대로. 누른 칸을 다시 누르면 지워집니다.</p>
+    ${slotsFor(state.profile, date).map(slot => `<section class="slot" aria-label="${slot.title}"><h2>${slot.title}</h2>${slot.fields.map(f => dayField(f, day, date)).join('')}${slot.id === 'morning' && sleep ? `<p class="hint">잔 시간 ${Math.floor(sleep / 60)}시간${sleep % 60 ? ` ${sleep % 60}분` : ''}</p>` : ''}</section>`).join('')}
+    <div class="summary-line"><span>이날의 순간 ${list.length}</span></div>
+    <div class="record-list">${list.map(momentCard).join('')}</div>
+    <div class="cat-actions">${date === today ? '<button data-action="add-moment">＋ 순간 남기기</button>' : '<span></span>'}<a class="text-link" href="#moments">모든 순간 ${state.moments.length} <span aria-hidden="true">›</span></a></div></div>`;
+  document.querySelectorAll('[data-day-input]').forEach(el => { el.onchange = () => setDay(date, d => setField(d, el.dataset.dayInput, el.value.trim())); });
+}
+function renderMoments() {
+  $('#main').innerHTML = `<div class="narrow"><a class="back" href="#day">← 하루로</a><div class="intro"><div><p class="eyebrow">MOMENTS</p><h1>남긴 순간</h1><p>무엇을 했는지보다, 그때 어땠는지.</p></div><button class="primary intro-actions" data-action="add-moment">＋ 순간</button></div><div class="record-list">${[...state.moments].reverse().map(momentCard).join('') || empty('한 장면, 한 줄부터', '운동, 코딩, 게임, 사람. 무엇이든 본 대로 적어 보세요.')}</div></div>`;
+}
 function renderShelf() {
-  $('#main').innerHTML = `<section aria-labelledby="shelf-title"><div class="intro"><div><p class="eyebrow">MY LITTLE LIBRARY</p><h1 id="shelf-title">나의 책장</h1><p>읽다가 머문 자리마다, 나만의 기록이 쌓입니다.</p></div><button class="primary intro-actions" data-action="add-book">＋ 책 추가</button></div><div class="toolbar"><div class="filters" aria-label="독서 상태">${[['all','전체'],['reading','읽는 중'],['finished','다 읽음']].map(([v,l]) => `<button data-filter="${v}" aria-pressed="${filter === v}">${l}</button>`).join('')}</div><div class="search-field"><label class="visually-hidden" for="local-search">책과 기록 검색</label><input type="search" id="local-search" placeholder="책 제목, 문장, 질문 찾기" value="${esc(query)}"></div></div><div id="shelf-results"></div></section>`;
+  $('#main').innerHTML = `<section aria-labelledby="shelf-title"><div class="intro"><div><p class="eyebrow">MY LITTLE LIBRARY</p><h1 id="shelf-title">나의 책장</h1><p>읽다가 머문 자리마다, 나만의 기록이 쌓입니다. <a class="text-link" href="#questions">남은 질문 ${state.books.reduce((n, b) => n + b.questions.filter(q => !q.answer).length, 0)} ›</a></p></div><button class="primary intro-actions" data-action="add-book">＋ 책 추가</button></div><div class="toolbar"><div class="filters" aria-label="독서 상태">${[['all','전체'],['reading','읽는 중'],['finished','다 읽음']].map(([v,l]) => `<button data-filter="${v}" aria-pressed="${filter === v}">${l}</button>`).join('')}</div><div class="search-field"><label class="visually-hidden" for="local-search">책과 기록 검색</label><input type="search" id="local-search" placeholder="책 제목, 문장, 질문 찾기" value="${esc(query)}"></div></div><div id="shelf-results"></div></section>`;
   shelfResults();
   $('#local-search').oninput = e => { query = e.target.value; shelfResults(); };
 }
 function shelfResults() {
   const books = state.books.filter(b => (filter === 'all' || b.status === filter) && matchesBook(b, query));
-  $('#shelf-results').innerHTML = books.length ? `${query ? `<p class="search-count" role="status">기록을 포함해 ${books.length}권을 찾았습니다.</p>` : ''}<div class="book-grid">${books.map(b => `<a class="book-tile" href="#book/${b.id}">${cover(b)}<h3>${esc(b.title)}</h3><p class="author">${esc(b.author || '저자 미기록')}</p><div class="counts"><span class="status-tag">${b.status === 'finished' ? '다 읽음' : '읽는 중'}</span>문장 ${b.entries.length} · 질문 ${b.questions.length}</div></a>`).join('')}</div>` : empty(state.books.length ? '아직 이 칸은 비어 있어요' : '첫 책을 놓아보세요', state.books.length ? '다른 검색어나 독서 상태로 찾아보세요.' : '곁에 두고 읽는 책 한 권이면 충분합니다.', !state.books.length ? '<button class="primary" data-action="add-book">내 책 추가하기</button>' : '');
+  $('#shelf-results').innerHTML = books.length ? `${query ? `<p class="search-count" role="status">기록을 포함해 ${books.length}권을 찾았습니다.</p>` : ''}<div class="book-grid">${books.map(b => `<a class="book-tile" href="#book/${esc(b.id)}">${cover(b)}<h3>${esc(b.title)}</h3><p class="author">${esc(b.author || '저자 미기록')}</p><div class="counts"><span class="status-tag">${b.status === 'finished' ? '다 읽음' : '읽는 중'}</span>문장 ${b.entries.length} · 질문 ${b.questions.length}</div></a>`).join('')}</div>` : empty(state.books.length ? '아직 이 칸은 비어 있어요' : '첫 책을 놓아보세요', state.books.length ? '다른 검색어나 독서 상태로 찾아보세요.' : '곁에 두고 읽는 책 한 권이면 충분합니다.', !state.books.length ? '<button class="primary" data-action="add-book">내 책 추가하기</button>' : '');
 }
 function recordCard(e, b, type, showBook = false) {
   const question = type === 'questions';
-  return `<article class="record ${question && e.answer ? 'answered' : ''}"><div class="meta"><span>${showBook ? `<a href="#book/${b.id}">${esc(b.title)}</a> · ` : ''}${esc(dateLabel(e.createdAt))}${!question && e.page ? ` · p. ${esc(e.page)}` : ''}</span>${question ? `<span class="q-label">${e.answer ? '답을 남긴 질문' : '아직 품고 있는 질문'}</span>` : '<span aria-hidden="true">문장</span>'}</div><p class="record-text">${esc(e.text)}</p>${e.note ? `<p class="note">${esc(e.note)}</p>` : ''}${question && e.answer ? `<p class="answer">${esc(e.answer)}</p><p class="hint">${esc(dateLabel(e.answeredAt))}에 남긴 답</p>` : ''}<div class="record-actions">${question ? `<button data-action="answer" data-book="${b.id}" data-id="${e.id}">${e.answer ? '답 수정' : '답 남기기'}</button>` : ''}<button data-action="edit-record" data-type="${type}" data-book="${b.id}" data-id="${e.id}">수정</button><button data-action="delete-record" data-type="${type}" data-book="${b.id}" data-id="${e.id}">삭제</button></div></article>`;
+  return `<article class="record ${question && e.answer ? 'answered' : ''}"><div class="meta"><span>${showBook ? `<a href="#book/${esc(b.id)}">${esc(b.title)}</a> · ` : ''}${esc(dateLabel(e.createdAt))}${!question && e.page ? ` · p. ${esc(e.page)}` : ''}</span>${question ? `<span class="q-label">${e.answer ? '답을 남긴 질문' : '아직 품고 있는 질문'}</span>` : '<span aria-hidden="true">문장</span>'}</div><p class="record-text">${esc(e.text)}</p>${e.note ? `<p class="note">${esc(e.note)}</p>` : ''}${question && e.answer ? `<p class="answer">${esc(e.answer)}</p><p class="hint">${esc(dateLabel(e.answeredAt))}에 남긴 답</p>` : ''}<div class="record-actions">${question ? `<button data-action="answer" data-book="${b.id}" data-id="${e.id}">${e.answer ? '답 수정' : '답 남기기'}</button>` : ''}<button data-action="edit-record" data-type="${type}" data-book="${b.id}" data-id="${e.id}">수정</button><button data-action="delete-record" data-type="${type}" data-book="${b.id}" data-id="${e.id}">삭제</button></div></article>`;
 }
 // 문장을 날짜로 묶고, 날짜 줄을 눌러 접었다 폅니다.
 function groupedRecords(records, b, type) {
   const groups = [];
   for (const e of [...records].reverse()) {
-    const key = e.createdAt || '';
+    const key = dayKey(e.createdAt);
     const last = groups[groups.length - 1];
     if (last && last.key === key) last.items.push(e); else groups.push({ key, items: [e] });
   }
@@ -120,7 +182,7 @@ function groupedRecords(records, b, type) {
     return `<section class="day ${isOpen ? 'open' : ''}">
       <button class="day-head" data-day="${esc(g.key)}" aria-expanded="${isOpen}">
         <span class="day-chevron" aria-hidden="true">${isOpen ? '⌄' : '›'}</span>
-        <span class="day-label">${esc(dateLabel(g.key))}</span>
+        <span class="day-label">${esc(dateLabel(g.items[0].createdAt))}</span>
         <span class="day-count">${g.items.length}</span>
       </button>
       ${isOpen ? `<div class="day-body">${g.items.map(e => recordCard(e, b, type)).join('')}</div>` : ''}
@@ -132,7 +194,7 @@ function renderBook() {
   if (!b) { $('#main').innerHTML = empty('책을 찾을 수 없어요', '책장에서 다른 책을 골라주세요.', '<a class="back" href="#shelf">← 책장으로</a>'); return; }
   if (foldBook !== b.id) {   // 책을 새로 열면 맨 위 날짜만 펴둡니다
     foldBook = b.id;
-    const days = [...new Set([...b.entries].reverse().map(e => e.createdAt || ''))];
+    const days = [...new Set([...b.entries].reverse().map(e => dayKey(e.createdAt)))];
     collapsed = new Set(days.slice(1));
   }
   const activeQuery = query.trim();
@@ -141,12 +203,10 @@ function renderBook() {
 }
 function renderQuestions() {
   const qs = state.books.flatMap(b => b.questions.map(q => ({ b, q }))).filter(({q}) => questionFilter === 'all' || (questionFilter === 'open' ? !q.answer : !!q.answer)).reverse();
-  $('#main').innerHTML = `<div class="narrow"><div class="intro"><div><p class="eyebrow">QUESTIONS TO KEEP</p><h1>남은 질문</h1><p>답을 기다리는 시간도 독서의 일부니까요.</p></div></div><div class="toolbar"><div class="filters" aria-label="답변 상태">${[['open','답을 기다리는'],['answered','답을 남긴'],['all','모든 질문']].map(([v,l]) => `<button data-question-filter="${v}" aria-pressed="${questionFilter === v}">${l}</button>`).join('')}</div></div><div class="record-list">${qs.map(({b,q}) => recordCard(q,b,'questions',true)).join('') || empty('질문을 위한 빈자리', '책을 열어 떠오른 물음을 남기면 이곳에 모입니다.')}</div></div>`;
+  $('#main').innerHTML = `<div class="narrow"><a class="back" href="#shelf">← 책장으로</a><div class="intro"><div><p class="eyebrow">QUESTIONS TO KEEP</p><h1>남은 질문</h1><p>답을 기다리는 시간도 독서의 일부니까요.</p></div></div><div class="toolbar"><div class="filters" aria-label="답변 상태">${[['open','답을 기다리는'],['answered','답을 남긴'],['all','모든 질문']].map(([v,l]) => `<button data-question-filter="${v}" aria-pressed="${questionFilter === v}">${l}</button>`).join('')}</div></div><div class="record-list">${qs.map(({b,q}) => recordCard(q,b,'questions',true)).join('') || empty('질문을 위한 빈자리', '책을 열어 떠오른 물음을 남기면 이곳에 모입니다.')}</div></div>`;
 }
-function renderJournal(type) {
-  const thoughts = type === 'thoughts';
-  const list = [...state[type]].reverse();
-  $('#main').innerHTML = `<div class="narrow"><div class="intro"><div><p class="eyebrow">${thoughts ? 'A PLACE FOR THOUGHTS' : 'PLACES & MOMENTS'}</p><h1>${thoughts ? '떠오르는 생각' : '다녀온 자리'}</h1><p>${thoughts ? '책 바깥에서 떠오른 것도, 잊기 전에.' : '어디에 갔는지, 무엇이 오래 남았는지.'}</p></div><button class="primary intro-actions" data-action="add-journal">＋ 기록</button></div><div class="record-list">${list.map(t => `<article class="record"><div class="meta"><span>${esc(dateLabel(t.createdAt))}</span></div>${t.place ? `<h3>${esc(t.place)}</h3>` : ''}<p class="record-text">${esc(t.text)}</p><div class="record-actions"><button data-action="edit-journal" data-id="${t.id}">수정</button><button data-action="delete-record" data-type="${type}" data-id="${t.id}">삭제</button></div></article>`).join('') || empty('아무렇게나, 한 줄부터', '잘 정리하지 않아도 괜찮습니다.')}</div></div>`;
+function renderThoughts() {
+  $('#main').innerHTML = `<div class="narrow"><div class="intro"><div><p class="eyebrow">A PLACE FOR THOUGHTS</p><h1>떠오르는 생각</h1><p>책 바깥에서 떠오른 것도, 잊기 전에.</p></div><button class="primary intro-actions" data-action="add-journal">＋ 기록</button></div><div class="record-list">${[...state.thoughts].reverse().map(t => `<article class="record"><div class="meta"><span>${esc(dateLabel(t.createdAt))}</span></div><p class="record-text">${esc(t.text)}</p><div class="record-actions"><button data-action="edit-journal" data-id="${esc(t.id)}">수정</button><button data-action="delete-record" data-type="thoughts" data-id="${esc(t.id)}">삭제</button></div></article>`).join('') || empty('아무렇게나, 한 줄부터', '잘 정리하지 않아도 괜찮습니다.')}</div></div>`;
 }
 
 function openModal(title, body, key = '') {
@@ -156,13 +216,13 @@ function openModal(title, body, key = '') {
   if (!dialog.open) dialog.showModal();
   $('[data-close]').onclick = () => closeModal();
   if (draftKey) {
-    try { const draft = JSON.parse(sessionStorage.getItem(draftKey) || 'null'); if (draft) { for (const [name,value] of Object.entries(draft)) { const el = dialog.querySelector(`[name="${name}"]`); if (el && el.type !== 'file') el.value = value; } notice('이 창에 남아 있던 초안을 불러왔습니다.'); modalDirty = true; } } catch {}
+    try { const draft = JSON.parse(sessionStorage.getItem(draftKey) || 'null'); if (draft) { for (const [name,value] of Object.entries(draft)) { const el = dialog.querySelector(`[name="${name}"]`); if (el && !['file','radio','checkbox'].includes(el.type)) el.value = value; } notice('이 창에 남아 있던 초안을 불러왔습니다.'); modalDirty = true; } } catch {}
   }
 }
 function preserveDraft() {
   if (!draftKey) return;
   const values = {};
-  dialog.querySelectorAll('input[name],textarea[name],select[name]').forEach(el => { if (el.type !== 'file') values[el.name] = el.value; });
+  dialog.querySelectorAll('input[name],textarea[name],select[name]').forEach(el => { if (!['file','radio','checkbox'].includes(el.type)) values[el.name] = el.value; });
   try { sessionStorage.setItem(draftKey, JSON.stringify(values)); } catch {}
 }
 dialog.addEventListener('input', () => { modalDirty = true; preserveDraft(); });
@@ -205,15 +265,38 @@ function recordEditor(type, bookId, id, answerOnly = false) {
   }));
 }
 function journalEditor(id) {
-  const type = route().page, trip = type === 'trips', item = state[type].find(x => x.id === id);
-  openModal(`${trip ? '여행' : '생각'} ${item ? '수정' : '남기기'}`, `<form id="edit-form">${trip ? field('다녀온 곳','place',item?.place,'required maxlength="500"') : ''}${area(trip ? '기억에 남는 순간' : '지금 떠오른 것','text',item?.text,true)}${submit('기록 저장')}</form>`, `${type}:${id || 'new'}`);
+  const item = state.thoughts.find(x => x.id === id);
+  openModal(`생각 ${item ? '수정' : '남기기'}`, `<form id="edit-form">${area('지금 떠오른 것','text',item?.text,true)}${submit('기록 저장')}</form>`, `thoughts:${id || 'new'}`);
   formHandler(data => change(s => {
-    const text = data.get('text').trim(), place = trip ? data.get('place').trim() : undefined;
-    if (!text || (trip && !place)) throw new Error('빈칸을 채워주세요.');
-    const values = {text,...(trip ? {place} : {})};
-    if (item) Object.assign(s[type].find(x => x.id === id),values);
-    else s[type].push({id:uid(),createdAt:now(),...values});
+    const text = data.get('text').trim();
+    if (!text) throw new Error('빈칸을 채워주세요.');
+    if (item) s.thoughts.find(x => x.id === id).text = text;
+    else s.thoughts.push({id:uid(),createdAt:now(),text});
   }));
+}
+const radios = (label, name, options, value, optional = true) => `<fieldset class="field pick ${optional ? 'optional' : ''}"><legend>${label}${optional ? ' · 선택' : ''}</legend><div class="chips">${options.map(([v,l]) => `<label class="chip-radio"><input type="radio" name="${name}" value="${v}" ${value === v ? 'checked' : ''}><span>${esc(l)}</span></label>`).join('')}</div></fieldset>`;
+function momentEditor(id, prompt = '') {
+  const item = state.moments.find(x => x.id === id), name = state.profile.catName || '고양이';
+  openModal(item ? '순간 수정' : '순간 남기기', `${prompt ? `<p class="prompt">${esc(prompt)}</p>` : `<p class="hint">판단 없이, 본 대로. “${esc(name)}는 오늘…”</p>`}<form id="edit-form">${area('한 장면 한 줄','text',item?.text,true)}${radios('기운','energy',ENERGY,item?.energy)}${radios('누구와','with',WITH,item?.with)}${radios('골랐나','chosen',CHOSEN,item?.chosen)}${field('장소 · 선택','place',item?.place,'maxlength="500"')}${submit('기록 저장')}</form>`, `moment:${id || (prompt ? 'cat' : 'new')}`);
+  // 선택 칸은 다시 누르면 풀립니다.
+  dialog.querySelectorAll('.optional input[type=radio]').forEach(r => {
+    r.dataset.on = r.checked ? '1' : '';
+    r.onclick = () => { const was = r.dataset.on; dialog.querySelectorAll(`input[name="${r.name}"]`).forEach(x => { x.dataset.on = ''; }); if (was) r.checked = false; else r.dataset.on = '1'; modalDirty = true; };
+  });
+  formHandler(data => change(s => {
+    const text = data.get('text').trim(); if (!text) throw new Error('기록할 내용을 입력해주세요.');
+    const values = { text, energy: data.get('energy') || '', with: data.get('with') || '', chosen: data.get('chosen') || '', place: data.get('place').trim() };
+    if (item) Object.assign(s.moments.find(x => x.id === id), values);
+    else s.moments.push({ id: uid(), createdAt: now(), ...values, from: prompt ? 'cat' : 'self' });
+  }));
+}
+function profileEditor() {
+  const p = state.profile, first = !p.catName, time = (label, name) => field(label, name, p.schedule[name], 'type="time" required');
+  openModal(first ? '고양이와 처음 만나기' : '고양이 설정', `<p class="hint">이 고양이는 나를 닮았습니다. 좋은 답도 나쁜 답도 없으니, 본 대로만 알려 주세요.</p><form id="edit-form">${field('고양이 이름','catName',p.catName,'required maxlength="30" placeholder="예: 보리"')}${radios('고양이 말투','tone',[['we','“우리 오늘 몇 시에 일어났지?”'],['you','“오늘 몇 시에 일어났어?”']],p.tone,false)}<p class="hint">평소 시각을 알려 주면 그때에 맞춰 묻습니다.</p><div class="field-row">${time('일어나는 시각','wake')}${time('집을 나서는 시각','leave')}</div><div class="field-row">${time('일을 마치는 시각','back')}${time('눕는 시각','bed')}</div><fieldset class="field pick"><legend>출근하는 요일</legend><div class="chips">${[[1,'월'],[2,'화'],[3,'수'],[4,'목'],[5,'금'],[6,'토'],[0,'일']].map(([v,l]) => `<label class="chip-radio"><input type="checkbox" name="workdays" value="${v}" ${p.workdays.includes(v) ? 'checked' : ''}><span>${l}</span></label>`).join('')}</div></fieldset>${submit(first ? '만나서 반가워' : '저장')}</form>`);
+  formHandler(data => {
+    const catName = data.get('catName').trim(); if (!catName) throw new Error('고양이 이름을 지어 주세요.');
+    return change(s => { s.profile = { ...s.profile, catName, tone: data.get('tone') === 'you' ? 'you' : 'we', schedule: { wake: data.get('wake'), leave: data.get('leave'), back: data.get('back'), bed: data.get('bed') }, workdays: data.getAll('workdays').map(Number) }; }, first ? `${catName}, 만나서 반가워.` : '고양이 설정을 저장했습니다.');
+  });
 }
 async function imageData(file) {
   if (!['image/jpeg','image/png','image/webp'].includes(file.type)) throw new Error('JPG, PNG, WebP 사진을 선택해주세요. HEIC 사진은 JPG로 변환해주세요.');
@@ -308,10 +391,11 @@ function download(content, filename) {
   const url = URL.createObjectURL(new Blob([content],{type:'application/json'}));
   const a = document.createElement('a'); a.href = url; a.download = filename; a.click(); setTimeout(() => URL.revokeObjectURL(url),10000);
 }
-function exportState(data = state, prefix = 'reading-notebook') { download(backup(data),`${prefix}-${new Date().toISOString().slice(0,10)}.json`); }
+function exportState(data = state, prefix = 'my-cat') { download(backup(data),`${prefix}-${new Date().toISOString().slice(0,10)}.json`); }
 function settings() {
   const s = stats(state);
-  openModal('기록 보관함',`<p class="hint">책 ${s.books}권 · 문장 ${s.entries}개 · 질문 ${s.questions}개<br>생각 ${s.thoughts}개 · 여행 ${s.trips}개</p><p>기록은 이 기기의 브라우저에 저장됩니다.<br>휴대폰과 PC 사이에 자동으로 공유되지는 않습니다.</p><div class="storage-block"><h3>파일로 남겨두기</h3><p class="hint">직접 올린 표지 사진까지 포함해 내려받습니다. 검색으로 연결한 표지는 주소가 저장되어 인터넷 연결이 필요합니다.</p><button class="primary" id="export">전체 기록 내보내기</button></div><div class="storage-block"><h3>백업에서 가져오기</h3><p class="hint">이전 기록장의 JSON 파일도 읽을 수 있습니다. 파일을 고르면 복원할 내용을 먼저 보여드립니다.</p><label class="file-label">백업 파일 선택<input class="visually-hidden" type="file" id="import" accept=".json,application/json"></label><div id="restore-area"></div></div><div class="storage-block"><h3>직전 저장 상태</h3><p class="hint">바로 전 저장으로 돌아갑니다. 복원 시 현재 기록도 파일로 내려받습니다.</p><button id="previous">직전 상태 확인</button></div><div class="storage-block"><h3>오래 보관하기</h3><p class="hint">브라우저 데이터를 지우면 기록도 지워집니다. 중요한 기록은 파일로도 보관해주세요.</p><button id="persistent">브라우저에 보관 요청</button><p class="hint" id="persistent-status"></p></div>`);
+  openModal('기록 보관함',`<p class="hint">책 ${s.books}권 · 문장 ${s.entries}개 · 질문 ${s.questions}개<br>생각 ${s.thoughts}개 · 하루 ${s.days}일 · 순간 ${s.moments}개</p><p>기록은 이 기기의 브라우저에 저장됩니다.<br>휴대폰과 PC 사이에 자동으로 공유되지는 않습니다.</p><div class="storage-block"><h3>고양이</h3><p class="hint">이름과 말투, 평소 시각, 출근 요일을 고칩니다.</p><button id="cat-profile">고양이 설정</button></div><div class="storage-block"><h3>파일로 남겨두기</h3><p class="hint">직접 올린 표지 사진까지 포함해 내려받습니다. 검색으로 연결한 표지는 주소가 저장되어 인터넷 연결이 필요합니다.</p><button class="primary" id="export">전체 기록 내보내기</button></div><div class="storage-block"><h3>백업에서 가져오기</h3><p class="hint">이전 기록장의 JSON 파일도 읽을 수 있습니다. 파일을 고르면 복원할 내용을 먼저 보여드립니다.</p><label class="file-label">백업 파일 선택<input class="visually-hidden" type="file" id="import" accept=".json,application/json"></label><div id="restore-area"></div></div><div class="storage-block"><h3>직전 저장 상태</h3><p class="hint">바로 전 저장으로 돌아갑니다. 복원 시 현재 기록도 파일로 내려받습니다.</p><button id="previous">직전 상태 확인</button></div><div class="storage-block"><h3>오래 보관하기</h3><p class="hint">브라우저 데이터를 지우면 기록도 지워집니다. 중요한 기록은 파일로도 보관해주세요.</p><button id="persistent">브라우저에 보관 요청</button><p class="hint" id="persistent-status"></p></div>`);
+  $('#cat-profile').onclick = () => profileEditor();
   $('#export').onclick = () => exportState();
   $('#import').onchange = async e => {
     const f = e.target.files[0]; if (!f) return;
@@ -334,7 +418,7 @@ function settings() {
 function previewRestore(data,label) {
   const s = stats(data);
   $('#form-error').textContent = '';
-  $('#restore-area').innerHTML = `<div class="restore-preview"><b>${label}</b><p>책 ${s.books}권 · 문장 ${s.entries}개 · 질문 ${s.questions}개<br>생각 ${s.thoughts}개 · 여행 ${s.trips}개</p><p>현재 기록 전체를 이 내용으로 교체합니다.<br>교체 전 현재 기록은 백업 파일로 내려받습니다.</p><button id="confirm-restore" class="primary">현재 기록 백업 후 교체</button></div>`;
+  $('#restore-area').innerHTML = `<div class="restore-preview"><b>${label}</b><p>책 ${s.books}권 · 문장 ${s.entries}개 · 질문 ${s.questions}개<br>생각 ${s.thoughts}개 · 하루 ${s.days}일 · 순간 ${s.moments}개</p><p>현재 기록 전체를 이 내용으로 교체합니다.<br>교체 전 현재 기록은 백업 파일로 내려받습니다.</p><button id="confirm-restore" class="primary">현재 기록 백업 후 교체</button></div>`;
   $('#confirm-restore').onclick = async e => {
     e.target.disabled = true; exportState(state,'before-restore');
     const ok = await change(s => Object.assign(s,structuredClone(data)),'기록을 복원했습니다.');
@@ -348,7 +432,7 @@ document.addEventListener('click', e => {
   if (btn.dataset.filter) { filter = btn.dataset.filter; renderShelf(); }
   if (btn.dataset.entryTab) { entryTab = btn.dataset.entryTab; renderBook(); }
   if (btn.dataset.day !== undefined) { const k = btn.dataset.day; collapsed.has(k) ? collapsed.delete(k) : collapsed.add(k); renderBook(); return; }
-  if (btn.dataset.action === 'fold-all') { const b = currentBook(); if (b) { const all = new Set(b.entries.map(e => e.createdAt || '')); collapsed = collapsed.size ? new Set() : all; renderBook(); } return; }
+  if (btn.dataset.action === 'fold-all') { const b = currentBook(); if (b) { const all = new Set(b.entries.map(e => dayKey(e.createdAt))); collapsed = collapsed.size ? new Set() : all; renderBook(); } return; }
   if (btn.dataset.questionFilter) { questionFilter = btn.dataset.questionFilter; renderQuestions(); }
   const {action,id,book,type} = btn.dataset;
   switch(action) {
@@ -363,6 +447,19 @@ document.addEventListener('click', e => {
     case 'add-journal': journalEditor(); break;
     case 'edit-journal': journalEditor(id); break;
     case 'clear-query': query = ''; renderBook(); break;
+    case 'profile': profileEditor(); break;
+    case 'add-moment': momentEditor(); break;
+    case 'edit-moment': momentEditor(id); break;
+    case 'cat-moment': momentEditor(undefined, btn.dataset.prompt); break;
+    case 'cat-book': recordEditor('entries', book); break;
+    case 'cat-catchup': catchUp = todayKey(); renderCat(); break;
+    case 'cat-skip': setDay(todayKey(), d => { if (!d.skipped.includes(btn.dataset.slot)) d.skipped.push(btn.dataset.slot); }); break;
+    case 'cat-time': { const v = $('#cat-time').value; if (v) setDay(todayKey(), d => setField(d, btn.dataset.key, v)); break; }
+    case 'cat-answer': case 'day-set': {
+      const key = btn.dataset.key, scale = FIELDS.find(f => f.key === key).type === 'scale', value = scale ? Number(btn.dataset.value) : btn.dataset.value;
+      setDay(btn.dataset.date || todayKey(), d => setField(d, key, action === 'day-set' && getField(d, key) === value ? (scale ? 0 : '') : value));
+      break;
+    }
   }
 });
 $('#settings').onclick = () => { if (ready && !busy) settings(); };
@@ -377,7 +474,7 @@ async function init() {
   try {
     db = await openStore(); const loaded = await load(db); state = loaded.state; revision = loaded.revision; ready = true;
     render(); status('이 브라우저에 저장됨');
-    if (loaded.migrated) notice('이전 기록을 모두 가져왔습니다. 원본 데이터도 그대로 보관했습니다.');
+    if (loaded.migrated || loaded.upgraded) notice('이전 기록을 모두 가져왔습니다. 원본 데이터도 그대로 보관했습니다.');
     if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('./sw.js').then(() => { status('이 브라우저에 저장됨'); }).catch(() => { status('저장 가능 · 오프라인 준비 실패'); });
   } catch(e) {
     status('불러오기 실패 · 원본 보존됨',true);

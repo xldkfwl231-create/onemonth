@@ -1,4 +1,4 @@
-import { emptyState, normalize } from './core.js';
+import { VERSION, emptyState, normalize } from './core.js';
 const DB = 'reading-notebook-v2';
 export async function openStore() {
   return new Promise((resolve, reject) => {
@@ -17,14 +17,20 @@ function get(db, key) {
 }
 export async function load(db) {
   const current = await get(db, 'current');
-  if (current) return { state: normalize(current.data), revision: current.revision, migrated: false };
+  if (current) {
+    const state = normalize(current.data);
+    if (current.data.version === VERSION) return { state, revision: current.revision, migrated: false };
+    // 이전 버전의 기록은 새 구조로 옮기고, 옮기기 직전 상태를 따로 남깁니다.
+    const revision = await commit(db, state, current.revision, null, { 'legacy-v2': current });
+    return { state, revision, migrated: false, upgraded: true };
+  }
   const raw = localStorage.getItem('onemonth_v1');
   const state = raw ? normalize(JSON.parse(raw)) : emptyState();
   // Preserve the untouched original in BOTH localStorage and the new database.
   const revision = await commit(db, state, 0, raw);
   return { state, revision, migrated: !!raw };
 }
-export async function commit(db, state, expectedRevision, legacy) {
+export async function commit(db, state, expectedRevision, legacy, keep = {}) {
   const clean = normalize(state);
   return new Promise((resolve, reject) => {
     const tx = db.transaction('records', 'readwrite');
@@ -35,6 +41,7 @@ export async function commit(db, state, expectedRevision, legacy) {
       if ((current?.revision || 0) !== expectedRevision) { conflict = true; tx.abort(); return; }
       if (current) store.put(current, 'previous');
       if (legacy) store.put(legacy, 'legacy-original');
+      for (const [key, value] of Object.entries(keep)) store.put(value, key);
       store.put({ data: clean, revision: expectedRevision + 1 }, 'current');
     };
     tx.oncomplete = () => resolve(expectedRevision + 1);
