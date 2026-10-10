@@ -159,7 +159,7 @@ body[data-page=home] .navigation a{flex:1;justify-content:center;padding:0 4px;f
 .skip-q{display:block;margin:4px auto 0;font-size:13px}
 .past-link{display:inline-flex;align-items:center;min-height:42px;padding:0 6px;font-size:13px}
 .bubble.done .past-link{margin:-6px 0 8px}
-.record .asked{font-size:13px;color:var(--mint-deep);margin:8px 0 0}
+
 
 /* 책장 */
 .book-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:30px 26px}
@@ -199,15 +199,35 @@ body[data-page=home] .navigation a{flex:1;justify-content:center;padding:0 4px;f
 .kind i{display:block;width:40px;height:3px;border-radius:2px;background:currentColor;opacity:.3;margin:4px 0 1px}
 .kind-go{font-size:13px;opacity:.75}
 .record-toolbar{justify-content:flex-end}
-.day{border-bottom:3px dotted var(--line)}
-.day:last-child{border-bottom:0}
-.day-head{display:flex;align-items:center;gap:9px;width:100%;min-height:46px;padding:0;border:0;background:none;box-shadow:none;text-align:left;border-radius:0;font-family:var(--body)}
-.day-head:hover,.day-head:active{background:none;transform:none}
-.day-chevron{width:13px;flex:0 0 13px;color:var(--mint-deep);font-size:13px;line-height:1}
-.day-label{font:400 13px var(--head);letter-spacing:.04em;color:var(--muted)}
-.day.open .day-label{color:var(--ink)}
-.day-count{margin-left:auto;font-size:12px;color:var(--muted)}
-.day-body{padding:2px 0 16px 22px;display:flex;flex-direction:column;gap:14px}
+
+/* 문장 모음집 — 상자 없이 인용처럼 */
+.quotes{display:flex;flex-direction:column}
+.q{position:relative;padding:14px 0 12px;border-bottom:3px dotted var(--line)}
+.q:last-child{border-bottom:0}
+.q .mark{display:block;font:400 36px/0.6 var(--head);color:var(--mint-deep);margin:8px 0 4px}
+.q.q-question .mark{color:var(--sky-ink);font-size:30px;line-height:.8}
+.q-text{font:400 18.5px/1.65 var(--head);margin:0 0 6px;white-space:pre-wrap;overflow-wrap:anywhere;word-break:keep-all}
+.q.answered .q-text{color:var(--muted)}
+.q-meta{font-size:12.5px;color:var(--muted);margin:0}
+.q-meta a{color:var(--mint-deep)}
+.mine{margin:10px 0 0;padding:9px 13px;border-left:4px solid var(--mint-line);background:var(--mint-pale);border-radius:0 12px 12px 0;font-size:14px;color:var(--ink);white-space:pre-wrap;overflow-wrap:anywhere}
+.mine.answer{border-color:#c5d8ea;background:var(--sky)}
+.mine small{display:block;margin-top:4px;font-size:11.5px;color:var(--muted)}
+.q-actions{display:flex;justify-content:flex-end;gap:2px;margin:4px 0 -6px;opacity:.7}
+.q-actions button,.tl .q-actions button{font-size:12.5px;background:none;border-color:transparent;box-shadow:none;padding:4px 10px;min-height:34px;color:var(--muted);font-family:var(--body)}
+.q-actions button:active{transform:none}
+
+/* 타임라인 — 생각·답. 왼쪽에 선과 점, 달마다 작은 제목 */
+.tl{position:relative;padding-left:28px;margin-top:4px}
+.tl::before{content:'';position:absolute;left:9px;top:12px;bottom:8px;width:3px;border-radius:2px;background:var(--line)}
+.tl-month{position:relative;margin:14px 0 10px -28px;font:400 15px var(--head);color:var(--ink)}
+.tl-month:first-child{margin-top:0}
+.tl-entry{position:relative;padding:2px 0 18px}
+.tl-entry::before{content:'';position:absolute;left:-24px;top:10px;width:11px;height:11px;border-radius:50%;background:var(--mint);border:3px solid var(--bg);box-shadow:0 0 0 2px var(--mint-line)}
+.tl-date{display:block;font:400 12px var(--head);letter-spacing:.08em;color:var(--muted);margin-bottom:4px}
+.tl-text{font:400 16px/1.75 var(--body);margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
+.tl .asked{font-size:13px;color:var(--mint-deep);margin:0 0 4px}
+.tl .q-actions{margin-top:2px}
 
 /* 책 추가 대화상자 */
 .cover-editor{display:flex;align-items:center;gap:22px;margin:14px 0 22px}
