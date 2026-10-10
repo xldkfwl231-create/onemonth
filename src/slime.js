@@ -20,6 +20,7 @@ export function mountSlime(container, { look = {}, onPoke = () => {}, reduced = 
   container.appendChild(canvas);
 
   const BASE = 0.8, FLOOR = -0.64;                         // 몸 크기, 바닥 높이
+  const bounds = { x: 1.3, z: 1.2 };                       // 벽 — 화면 크기에 맞춰 다시 잽니다
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 40);
   const orbit = { theta: 0.12, phi: 0.42, dist: 6.2 };     // 카메라: 돌아가는 각, 내려다보는 각, 거리
@@ -27,7 +28,7 @@ export function mountSlime(container, { look = {}, onPoke = () => {}, reduced = 
   function placeCamera() {
     const { theta, phi, dist } = orbit;
     camera.position.set(lookAt.x + dist * Math.cos(phi) * Math.sin(theta), lookAt.y + dist * Math.sin(phi), lookAt.z + dist * Math.cos(phi) * Math.cos(theta));
-    camera.lookAt(lookAt);
+    camera.lookAt(lookAt); fitArena();
   }
   placeCamera();
 
@@ -90,7 +91,6 @@ export function mountSlime(container, { look = {}, onPoke = () => {}, reduced = 
   const sq = [1, 1, 1], sqv = [0, 0, 0];
   const at = new THREE.Vector3(), go = new THREE.Vector3();                       // 자리(x·z 바닥, y 뛰어오른 높이), 속도
   const tumble = new THREE.Quaternion(), spinAxis = new THREE.Vector3(0, 0, 1); let spinRate = 0;   // 날아가며 구르기
-  const ARENA = 1.35;
   let lastT = performance.now(), idleTimer = 1.5, blinkTimer = 2.5, blink = 0;
   let down = null, pressing = null, pinch = null, pokes = 0, running = true;
   const pointers = new Map();
@@ -241,8 +241,9 @@ export function mountSlime(container, { look = {}, onPoke = () => {}, reduced = 
         else { go.y = 0; spinRate = 0; const slow = Math.exp(-2.6 * dt); go.x *= slow; go.z *= slow; if (Math.hypot(go.x, go.z) < 0.05) go.set(0, 0, 0); }
       }
       for (const [axis, key] of [[0, 'x'], [2, 'z']]) {
-        if (at[key] > ARENA) { at[key] = ARENA; if (go[key] > 0.3) bump(axis, go[key]); go[key] = -go[key] * 0.55; }
-        if (at[key] < -ARENA) { at[key] = -ARENA; if (go[key] < -0.3) bump(axis, -go[key]); go[key] = -go[key] * 0.55; }
+        const lim = bounds[key], hi = key === 'z' ? lim * 0.3 : lim;   // 화면 아래쪽(카메라 쪽)은 말풍선에 가리니 조금만
+        if (at[key] > hi) { at[key] = hi; if (go[key] > 0.3) bump(axis, go[key]); go[key] = -go[key] * 0.55; }
+        if (at[key] < -lim) { at[key] = -lim; if (go[key] < -0.3) bump(axis, -go[key]); go[key] = -go[key] * 0.55; }
       }
     }
     if (at.y === 0 && spinRate === 0) tumble.slerp(upright, 1 - Math.exp(-7 * dt));   // 떨어지면 다시 바로 섭니다
@@ -268,7 +269,15 @@ export function mountSlime(container, { look = {}, onPoke = () => {}, reduced = 
   function resize() {
     const w = container.clientWidth, h = container.clientHeight || w;
     if (!w || !h) return;
-    renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
+    renderer.setSize(w, h, false); camera.aspect = w / h;
+    // 가로 시야를 고정해서 세로로 긴 폰에서도 슬라임이 화면의 4할쯤만 차지하게
+    camera.fov = THREE.MathUtils.clamp(2 * Math.atan(0.355 / camera.aspect) * 180 / Math.PI, 24, 88);
+    camera.updateProjectionMatrix(); fitArena();
+  }
+  // 보이는 화면 안에서만 튕기도록 — 카메라 거리와 비율로 벽을 잽니다
+  function fitArena() {
+    const halfH = Math.tan(camera.fov * Math.PI / 360) * orbit.dist, halfW = halfH * camera.aspect;
+    bounds.x = Math.max(0.5, halfW * 0.82 - 0.55); bounds.z = Math.max(0.5, Math.min(3, halfH * 0.5));
   }
   const ro = new ResizeObserver(resize); ro.observe(container); resize();
 

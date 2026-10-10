@@ -107,7 +107,7 @@ export function nextQuestion(state, now = new Date(), skipped = []) {
   const book = [...state.books].reverse().find(b => b.status === 'reading');
   if (book && evening && !skipped.includes('book') && !book.entries.some(e => today(e.createdAt)))
     return { slot: 'book', title: '책', type: 'book', bookId: book.id, text: `『${book.title}』에서 오늘 머문 문장이 ${tone ? '있어?' : '있었나?'}` };
-  if (!skipped.includes('prompt') && !state.moments.some(m => m.from === 'cat' && today(m.createdAt)))
-    return { slot: 'prompt', title: '순간', type: 'moment', text: PROMPTS[Number(date.replaceAll('-', '')) % PROMPTS.length][tone] };
+  if (!skipped.includes('prompt') && !state.thoughts.some(t => today(t.createdAt)))
+    return { slot: 'prompt', title: '생각', type: 'moment', text: PROMPTS[Number(date.replaceAll('-', '')) % PROMPTS.length][tone] };
   return null;
 }

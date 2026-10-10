@@ -48,7 +48,7 @@ test('the cat asks for a sentence in the evening, one observation a day, then re
   assert.equal(nextQuestion(s,at(20)).type,'book');
   assert.equal(nextQuestion(s,at(20),['book']).type,'moment');
   s.books[0].entries.push({id:'e',text:'문장',page:'',note:'',createdAt:at(19).toISOString()});
-  s.moments.push({id:'m',createdAt:at(10).toISOString(),text:'본 것',energy:'',with:'',chosen:'',place:'',from:'cat'});
+  s.thoughts.push({id:'m',createdAt:at(10).toISOString(),text:'본 것'});
   assert.equal(nextQuestion(s,at(20)),null);
   s.profile.tone = 'you'; assert.match(nextQuestion(s,at(20),['prompt']) === null ? '어?' : 'x',/어\?/);
 });
