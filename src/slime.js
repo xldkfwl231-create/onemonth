@@ -156,7 +156,31 @@ export function mountSlime(container, { look = {}, onPoke = () => {}, reduced = 
   }
 
   // ── 손짓 ──
+  // ── 흔들기 ── 폰을 흔든 세기만큼 슬라임이 날아갑니다. 살짝 흔들면 출렁이기만.
+  // 아이폰은 사용자가 화면을 한 번 만진 뒤에야 움직임 센서를 허락받을 수 있어서, 첫 터치 때 묻습니다.
+  let motionAsked = false, lastShake = 0, grav = null;
+  function askMotion() {
+    if (motionAsked) return; motionAsked = true;
+    const D = window.DeviceMotionEvent;
+    if (D && typeof D.requestPermission === 'function') D.requestPermission().catch(() => {});
+  }
+  function onMotion(e) {
+    if (reduced || down) return;
+    let a = e.acceleration;                                     // 중력을 뺀 값 (대부분의 폰)
+    if (!a || a.x == null) {                                    // 없으면 중력 포함 값에서 천천히 변하는 부분(중력)을 빼서 씁니다
+      const g = e.accelerationIncludingGravity; if (!g || g.x == null) return;
+      grav = grav ? { x: grav.x * 0.9 + g.x * 0.1, y: grav.y * 0.9 + g.y * 0.1, z: grav.z * 0.9 + g.z * 0.1 } : { x: g.x, y: g.y, z: g.z };
+      a = { x: g.x - grav.x, y: g.y - grav.y, z: g.z - grav.z };
+    }
+    const m = Math.hypot(a.x, a.y, a.z || 0), now = performance.now();
+    if (!Number.isFinite(m) || m < 4 || now - lastShake < 220) return;
+    lastShake = now;
+    api.shake(-a.x, a.y, m);
+  }
+  window.addEventListener('devicemotion', onMotion);
+
   canvas.addEventListener('pointerdown', e => {
+    askMotion();
     try { canvas.setPointerCapture(e.pointerId); } catch {}
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pointers.size === 2) {                       // 두 손가락: 확대·축소
@@ -304,6 +328,17 @@ export function mountSlime(container, { look = {}, onPoke = () => {}, reduced = 
     tick(dt = 1 / 60) { step(dt); renderer.render(scene, camera); },   // 화면이 숨겨져 있을 때 확인용
     energy() { let m = 0; for (let i = 0; i < off.length; i++) m = Math.max(m, Math.abs(off[i])); return { surface: +m.toFixed(4), lean: +lean.length().toFixed(3), pull: +pull.length().toFixed(3), squash: +sq[1].toFixed(3), at: at.toArray().map(v => +v.toFixed(3)), speed: +go.length().toFixed(3), spin: +spinRate.toFixed(2), orbit: { ...orbit }, pokes }; },
     poke() { tmp.set(0.1, 0.4, 0.9).normalize(); poke({ local: tmp.clone(), push: tmp.clone().negate() }); },
+    // 흔들기: (x, y) 는 화면 기준 방향(오른쪽 +, 위 +), strength 는 m/s²
+    shake(x, y, strength) {
+      const dir = new THREE.Vector2(x, -y); if (dir.lengthSq() < 1e-4) dir.set(Math.random() - 0.5, Math.random() - 0.5);
+      dir.normalize().rotateAround(new THREE.Vector2(), (Math.random() - 0.5) * 0.6);   // 매번 조금씩 다른 데로
+      if (strength < 11) { wobble(dir.x, dir.y, Math.min(3, strength * 0.35)); squish(1, Math.min(1.2, strength * 0.12)); return; }
+      const speed = THREE.MathUtils.clamp((strength - 8) * 0.55, 2.5, 9);
+      go.set(dir.x * speed, Math.min(4.2, 1.2 + speed * 0.45), dir.y * speed); if (at.y < 0.01) at.y = 0.02;
+      spinAxis.set(0, 1, 0).cross(go).normalize(); if (spinAxis.lengthSq() < 0.1) spinAxis.set(0, 0, 1);
+      spinRate = Math.min(10, speed * 1.4); squish(1, 1.2);
+      pokes++; onPoke(pokes);
+    },
     stretch(x = 1.2, y = 0.3, z = 0) { tmp.set(0.2, 0.3, 0.9).normalize(); grab({ local: tmp.clone(), push: tmp.clone().negate(), world: body.localToWorld(tmp.clone()) }); pull.set(x, y, z); pullV.set(0, 0, 0); },   // 확인용
     throw(x = 4, z = 0) { go.set(x, Math.min(3.4, Math.hypot(x, z) * 0.5), z); at.y = 0.02; spinAxis.set(0, 1, 0).cross(go).normalize(); spinRate = Math.min(9, go.length() * 1.3); },   // 확인용
     setLook(next) {
@@ -311,7 +346,7 @@ export function mountSlime(container, { look = {}, onPoke = () => {}, reduced = 
       material.color.set(look.color); material.attenuationColor.set(look.color); material.transmission = look.clarity;
     },
     destroy() {
-      running = false; renderer.setAnimationLoop(null); ro.disconnect(); document.removeEventListener('visibilitychange', onVisible);
+      running = false; window.removeEventListener('devicemotion', onMotion); renderer.setAnimationLoop(null); ro.disconnect(); document.removeEventListener('visibilitychange', onVisible);
       geometry.dispose(); material.dispose(); eyeMat.dispose(); cheekMat.dispose(); floor.geometry.dispose(); floor.material.dispose(); sun.shadow.map?.dispose();
       scene.environment?.dispose(); renderer.dispose(); canvas.remove(); delete container.__slime;
     }

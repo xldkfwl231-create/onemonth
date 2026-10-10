@@ -3,7 +3,7 @@ import { mountSlime } from './slime.js';
 import { openStore, load, commit, previous } from './storage.js';
 import { BOOK_SEARCH_ENDPOINT } from './config.js';
 
-const BUILD = '1010f';   // 폰에서 어떤 판을 보고 있는지 확인용
+const BUILD = '1010g';   // 폰에서 어떤 판을 보고 있는지 확인용
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 let state = emptyState(), db, revision = 0, busy = false, ready = false;
@@ -353,6 +353,9 @@ channel && (channel.onmessage = async e => {
 async function init() {
   try {
     db = await openStore(); const loaded = await load(db); state = loaded.state; revision = loaded.revision; ready = true;
+    // 2026-10-10 슬라임의 질문에 답한 '쇼츠볼때'가 생각 탭에 잘못 들어갔던 것 한 건만 지웁니다 (사용자 요청)
+    const stray = state.thoughts.find(t => t.text.replace(/\s/g, '') === '쇼츠볼때' && (t.createdAt || '').startsWith('2026-10-10'));
+    if (stray) await change(s => { s.thoughts = s.thoughts.filter(t => t.id !== stray.id); }, '');
     render(); status('이 브라우저에 저장됨');
     if (loaded.migrated || loaded.upgraded) notice('이전 기록을 모두 가져왔습니다. 원본 데이터도 그대로 보관했습니다.');
     if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('./sw.js').then(() => { status('이 브라우저에 저장됨'); }).catch(() => { status('저장 가능 · 오프라인 준비 실패'); });
