@@ -3,7 +3,7 @@ import { mountSlime } from './slime.js';
 import { openStore, load, commit, previous } from './storage.js';
 import { BOOK_SEARCH_ENDPOINT } from './config.js';
 
-const BUILD = '1010h';   // 폰에서 어떤 판을 보고 있는지 확인용
+const BUILD = '1011a';   // 폰에서 어떤 판을 보고 있는지 확인용
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 let state = emptyState(), db, revision = 0, busy = false, ready = false;
@@ -47,6 +47,7 @@ function render() {
   if (!ready) return;
   const raw = route().page, page = ['cat', 'room', 'moments', 'trips', 'day'].includes(raw) ? 'home' : raw;   // 옛 주소는 첫 화면으로
   if (slime && page !== 'home') { slime.destroy(); slime = null; }
+  if (page !== 'home') document.body.classList.remove('night');
   const tab = { book:'shelf', questions:'shelf', shelf:'shelf', thoughts:'thoughts' }[page] || 'home';
   document.querySelectorAll('[data-nav]').forEach(a => { if (a.dataset.nav === tab) a.setAttribute('aria-current','page'); else a.removeAttribute('aria-current'); });
   document.body.dataset.page = page;
@@ -103,8 +104,7 @@ function maybeSay(pokes) {
   const lines = sayLines().filter(l => !saidToday.has(l)); if (!lines.length) return;
   const line = lines[Math.floor(Math.random() * lines.length)]; saidToday.add(line);
   try { localStorage.setItem(`slime-said:${todayKey()}`, String(dayCount + 1)); } catch {}
-  el.textContent = line; el.hidden = false; el.classList.add('show');
-  clearTimeout(maybeSay.timer); maybeSay.timer = setTimeout(() => { el.classList.remove('show'); setTimeout(() => { el.hidden = true; }, 400); }, 7000);
+  showSay(line);
 }
 // 물음표 단추: 물을 게 있으면 점이 켜지고, 누르면 질문 상자가 펼쳐집니다
 function syncAsk() {
@@ -114,9 +114,42 @@ function syncAsk() {
   box.hidden = !askOpen; fab.setAttribute('aria-expanded', String(askOpen)); fab.classList.toggle('open', askOpen);
   fab.querySelector('.ask-dot').hidden = !pending || askOpen;
 }
+// 슬라임이 먹은 기록 — 생각, 책 문장, 슬라임에게 한 답. 오래된 것부터.
+function beadList() {
+  const t = v => isIso(v) ? Date.parse(v) : 0;
+  return [
+    ...state.thoughts.map(x => ({ id: x.id, kind: 'thought', at: t(x.createdAt) })),
+    ...state.books.flatMap(b => b.entries.map(x => ({ id: x.id, kind: 'entry', at: t(x.createdAt) }))),
+    ...state.answers.map(x => ({ id: x.id, kind: 'answer', at: t(x.createdAt) }))
+  ].sort((a, b) => a.at - b.at);
+}
+// 처음 보는 기록만 위에서 떨어뜨립니다. 본 것은 이 기기에만 기억합니다.
+function syncBeads() {
+  if (!slime) return;
+  const list = beadList(); let seen = null;
+  try { seen = JSON.parse(localStorage.getItem('slime-seen') || 'null'); } catch {}
+  const drop = seen ? list.filter(b => !seen.includes(b.id)).map(b => b.id) : [];
+  slime.setBeads(list, drop);
+  try { localStorage.setItem('slime-seen', JSON.stringify(list.map(b => b.id))); } catch {}
+}
+function beadText(id) {
+  const th = state.thoughts.find(x => x.id === id); if (th) return `${dateLabel(th.createdAt)}의 생각. “${th.text.length > 70 ? th.text.slice(0, 70) + '…' : th.text}”`;
+  const an = state.answers.find(x => x.id === id); if (an) return `${dateLabel(an.createdAt)}의 답. “${an.text.length > 70 ? an.text.slice(0, 70) + '…' : an.text}”`;
+  for (const b of state.books) { const e = b.entries.find(x => x.id === id); if (e) return `『${b.title}』 ${e.page ? `p. ${e.page}` : ''} “${e.text.length > 60 ? e.text.slice(0, 60) + '…' : e.text}”`; }
+  return '';
+}
+function showSay(line) {
+  const el = $('#slime-say'); if (!el || !line) return;
+  el.textContent = line; el.hidden = false; el.classList.add('show');
+  clearTimeout(maybeSay.timer); maybeSay.timer = setTimeout(() => { el.classList.remove('show'); setTimeout(() => { el.hidden = true; }, 400); }, 7000);
+}
+// 밤(21시~6시)에는 어두워지고 슬라임이 졸아요
+const isNight = () => { const h = new Date().getHours(); return h >= 21 || h < 6; };
+function syncNight() { const n = isNight(); document.body.classList.toggle('night', n && route().page !== 'shelf'); slime?.setNight(n); }
+setInterval(() => { if (slime) syncNight(); }, 60000);
 function renderHome() {
   // 슬라임이 떠 있는 동안에는 말풍선만 바꿉니다 — 출렁이던 게 멈추지 않도록
-  if (slime && $('#slime-stage')) { $('#home-bubble').innerHTML = bubble(); syncAsk(); return; }
+  if (slime && $('#slime-stage')) { $('#home-bubble').innerHTML = bubble(); syncAsk(); syncBeads(); return; }
   askOpen = !state.profile.catName;   // 처음 만날 때만 열어 둡니다
   $('#main').innerHTML = `<section class="slime-home" aria-label="슬라임">
     <div class="slime-stage" id="slime-stage"><div class="slime-say" id="slime-say" role="status" hidden></div></div>
@@ -124,7 +157,7 @@ function renderHome() {
     <button class="ask-fab" id="ask-fab" aria-label="슬라임의 질문" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 9.5a3 3 0 1 1 4.6 2.5c-1 .7-1.6 1.3-1.6 2.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><circle cx="12" cy="18" r="1.4" fill="currentColor"/></svg><i class="ask-dot" hidden></i></button>
   </section>`;
   syncAsk();
-  try { slime = mountSlime($('#slime-stage'), { onPoke: maybeSay, reduced: matchMedia('(prefers-reduced-motion: reduce)').matches }); }
+  try { slime = mountSlime($('#slime-stage'), { onPoke: maybeSay, onBead: id => showSay(beadText(id)), onDoubleTap: () => journalEditor(), reduced: matchMedia('(prefers-reduced-motion: reduce)').matches }); syncBeads(); syncNight(); }
   catch (e) { $('#slime-stage').innerHTML = `<p class="empty">이 브라우저에서는 슬라임을 그릴 수 없습니다.<br><small>${esc(e.message)}</small></p>`; }
 }
 function renderShelf() {

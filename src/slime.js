@@ -4,9 +4,9 @@
 // 모습(색·투명도·단단함)은 밖에서 정해 줍니다 — 나중에 요약이 정하게 될 자리입니다.
 import * as THREE from '../vendor/three.module.min.js';
 
-export const DEFAULT_LOOK = { color: '#a9d3a4', clarity: 0.5, firmness: 42, damping: 4.2 };
+export const DEFAULT_LOOK = { color: '#a9d3a4', clarity: 0.62, firmness: 42, damping: 4.2 };
 
-export function mountSlime(container, { look = {}, onPoke = () => {}, reduced = false } = {}) {
+export function mountSlime(container, { look = {}, onPoke = () => {}, onBead = () => {}, onDoubleTap = () => {}, reduced = false } = {}) {
   look = { ...DEFAULT_LOOK, ...look };
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'low-power' });
   renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
@@ -33,12 +33,12 @@ export function mountSlime(container, { look = {}, onPoke = () => {}, reduced = 
   placeCamera();
 
   // 빛: 한쪽에서 세게 와서 그림자가 길게 지도록
-  scene.add(new THREE.HemisphereLight(0xfff7e8, 0xc9cdb8, 0.75));
+  const hemi = new THREE.HemisphereLight(0xfff7e8, 0xc9cdb8, 0.75); scene.add(hemi);
   const sun = new THREE.DirectionalLight(0xfff4df, 2.4); sun.position.set(2.6, 5.2, 2.2); sun.castShadow = true;
   sun.shadow.mapSize.set(1024, 1024); sun.shadow.camera.left = sun.shadow.camera.bottom = -3.2; sun.shadow.camera.right = sun.shadow.camera.top = 3.2;
   sun.shadow.camera.near = 1; sun.shadow.camera.far = 14; sun.shadow.radius = 4; sun.shadow.bias = -0.0006; scene.add(sun);
   const rim = new THREE.DirectionalLight(0xe2ebff, 0.6); rim.position.set(-3, 2.5, -2.5); scene.add(rim);
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.ShadowMaterial({ opacity: 0.22 }));
+  const floor = new THREE.Mesh(new THREE.CircleGeometry(3, 48), new THREE.ShadowMaterial({ opacity: 0.22 }));   // 그림자 범위 안에서만 — 넓으면 가장자리에 네모난 경계가 보임
   floor.rotation.x = -Math.PI / 2; floor.position.y = FLOOR; floor.receiveShadow = true; scene.add(floor);
 
   // 종이 톤의 작은 방을 비춰서 젤리 표면에 부드러운 반사가 생기게 합니다.
@@ -72,8 +72,8 @@ export function mountSlime(container, { look = {}, onPoke = () => {}, reduced = 
 
   const color = new THREE.Color(look.color);
   const material = new THREE.MeshPhysicalMaterial({
-    color, roughness: 0.12, metalness: 0, transmission: look.clarity, thickness: 1.5, ior: 1.4,
-    clearcoat: 1, clearcoatRoughness: 0.08, attenuationColor: color.clone(), attenuationDistance: 1.2, envMapIntensity: 1.1
+    color, roughness: 0.1, metalness: 0, transmission: look.clarity, thickness: 0.8, ior: 1.22,   // 얇고 덜 굴절되게 — 안의 방울이 또렷하게
+    clearcoat: 1, clearcoatRoughness: 0.08, attenuationColor: color.clone(), attenuationDistance: 3.2, envMapIntensity: 1.1
   });
   const body = new THREE.Mesh(geometry, material); body.castShadow = true;
   const group = new THREE.Group(); group.add(body); scene.add(group);
@@ -93,6 +93,69 @@ export function mountSlime(container, { look = {}, onPoke = () => {}, reduced = 
   mouth.mesh.rotateZ(Math.PI);                                   // 웃는 입이 되도록 호를 아래로
   const stickers = [...eyes, ...cheeks, mouth];
 
+  // ── 방울: 슬라임이 먹은 기록 ── 몸 안에 비쳐 보입니다. 오래된 건 아래, 최근 건 위.
+  const BEAD_MAX = 160, BEAD_COLORS = { thought: 0xff7a59, entry: 0xffd23f, answer: 0x5aa2ff };
+  const beadGeo = new THREE.IcosahedronGeometry(1, 2);
+  const beadMat = new THREE.MeshStandardMaterial({ roughness: 0.3, metalness: 0, emissive: 0x6a6a6a });
+  const beadMesh = new THREE.InstancedMesh(beadGeo, beadMat, BEAD_MAX);
+  beadMesh.count = 0; beadMesh.frustumCulled = false; group.add(beadMesh);
+  let beads = [];                                                // { id, kind, home: Vector3, pos: Vector3, vy, size, falling }
+  const hash = str => { let h = 2166136261; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0) / 4294967295; };
+  function slotFor(id, rank, total) {
+    const y = total <= 1 ? -0.05 : -0.36 + 0.66 * (rank / (total - 1));    // 오래된 순서로 아래에서 위로
+    const r = Math.max(0.08, Math.sqrt(Math.max(0, 0.62 - (y * 1.25) ** 2)) * 0.82);
+    const a = hash(id) * Math.PI * 2, d = Math.sqrt(hash(id + '·')) * r;
+    return new THREE.Vector3(Math.cos(a) * d, y, Math.sin(a) * d);
+  }
+  const beadColor = new THREE.Color(), m4 = new THREE.Matrix4(), q0 = new THREE.Quaternion(), v3 = new THREE.Vector3();
+  function paintBeads() {
+    beadMesh.count = beads.length;
+    beads.forEach((b, i) => { beadMesh.setColorAt(i, beadColor.set(BEAD_COLORS[b.kind] || 0xffffff)); });
+    if (beadMesh.instanceColor) beadMesh.instanceColor.needsUpdate = true;
+  }
+  // list: [{ id, kind }] 오래된 것부터. drop: 새로 떨어뜨릴 id 목록
+  function setBeads(list, drop = []) {
+    list = list.slice(-BEAD_MAX);
+    const size = THREE.MathUtils.clamp(0.1 - list.length * 0.0003, 0.055, 0.09);
+    const old = new Map(beads.map(b => [b.id, b]));
+    let delay = 0;
+    beads = list.map((it, rank) => {
+      const home = slotFor(it.id, rank, list.length), prev = old.get(it.id);
+      if (prev) return { ...prev, kind: it.kind, home, size };
+      if (drop.includes(it.id)) { delay += Math.min(0.35, 2.5 / drop.length); return { id: it.id, kind: it.kind, home, size, pos: new THREE.Vector3(home.x * 0.4, 2.6 + delay * 2.2, home.z * 0.4), vy: 0, falling: true, splashed: false }; }
+      return { id: it.id, kind: it.kind, home, size, pos: home.clone(), vy: 0, falling: false };
+    });
+    paintBeads();
+  }
+  function stepBeads(dt, sag) {
+    for (let i = 0; i < beads.length; i++) {
+      const b = beads[i];
+      if (b.falling) {
+        b.vy -= 6 * dt; b.pos.y += b.vy * dt;
+        b.pos.x += (b.home.x - b.pos.x) * Math.min(1, dt * 2); b.pos.z += (b.home.z - b.pos.z) * Math.min(1, dt * 2);
+        if (!b.splashed && b.pos.y < 0.85) {                     // 몸에 닿는 순간 퐁
+          b.splashed = true; b.vy *= 0.25;
+          tmp.set(b.pos.x, 0.9, b.pos.z).normalize(); impulse({ local: tmp.clone(), push: new THREE.Vector3(0, -1, 0) }, 2.4, 0.55); squish(1, 1.1); wobble(b.pos.x, b.pos.z, 1.2);
+        }
+        if (b.pos.y <= b.home.y) { b.pos.copy(b.home); b.falling = false; }
+      } else b.pos.lerp(b.home, Math.min(1, dt * 3));
+      const h = Math.pow(THREE.MathUtils.clamp((b.pos.y + 0.5) / 1.1, 0, 1), 1.6);   // 몸과 같이 흔들리게
+      const wob = 0.012 * Math.sin(performance.now() / 900 + i);
+      v3.set(b.pos.x + lean.x * h, b.pos.y - sag * h + wob, b.pos.z + lean.y * h);
+      m4.compose(v3, q0, new THREE.Vector3(b.size, b.size, b.size)); beadMesh.setMatrixAt(i, m4);
+    }
+    beadMesh.instanceMatrix.needsUpdate = true;
+  }
+  function pickBead(e) {
+    if (!beads.length || !castFrom(e.clientX, e.clientY)) return null;
+    beadMesh.computeBoundingSphere();
+    const hit = raycaster.intersectObject(beadMesh, false)[0];
+    return hit && hit.instanceId != null ? beads[hit.instanceId]?.id : null;
+  }
+
+  // ── 밤: 어두워지고 눈을 감고 졺. 만지면 잠깐 깹니다 ──
+  let night = false, awakeUntil = 0;
+
   // ── 물리 상태 ──
   // lean: 윗부분이 옆으로 기우는 젤리 흔들림 / pull: 잡아당긴 만큼 늘어남 / sq: 세 축 눌림 / off: 표면의 잔물결
   const lean = new THREE.Vector2(), leanV = new THREE.Vector2();
@@ -102,7 +165,7 @@ export function mountSlime(container, { look = {}, onPoke = () => {}, reduced = 
   const at = HOME.clone(), go = new THREE.Vector3();                             // 자리(x·z 바닥, y 뛰어오른 높이), 속도
   const tumble = new THREE.Quaternion(), spinAxis = new THREE.Vector3(0, 0, 1); let spinRate = 0;   // 날아가며 구르기
   let lastT = performance.now(), idleTimer = 1.5, blinkTimer = 2.5, blink = 0;
-  let down = null, pressing = null, pinch = null, pokes = 0, running = true;
+  let down = null, pressing = null, pinch = null, pokes = 0, running = true, lastTap = 0;
   const pointers = new Map();
   const raycaster = new THREE.Raycaster(), ndc = new THREE.Vector2(), tmp = new THREE.Vector3();
   const dragPlane = new THREE.Plane();
@@ -186,8 +249,8 @@ export function mountSlime(container, { look = {}, onPoke = () => {}, reduced = 
     if (pointers.size === 2) {                       // 두 손가락: 확대·축소
       const [a, b] = [...pointers.values()]; pinch = { d0: Math.hypot(a.x - b.x, a.y - b.y), dist0: orbit.dist }; down = null; pressing = null; return;
     }
-    const hit = pick(e);
-    down = { x: e.clientX, y: e.clientY, t: performance.now(), moved: false, hit, lastT: performance.now(), fling: new THREE.Vector3(), lastP: null };
+    const hit = pick(e), bead = pickBead(e);
+    down = { x: e.clientX, y: e.clientY, t: performance.now(), moved: false, hit, lastT: performance.now(), fling: new THREE.Vector3(), lastP: null, bead };
     if (hit) { grab(hit); down.lastP = hit.world.clone(); }
   });
   canvas.addEventListener('pointermove', e => {
@@ -217,7 +280,15 @@ export function mountSlime(container, { look = {}, onPoke = () => {}, reduced = 
     pointers.delete(e.pointerId);
     if (pinch) { if (pointers.size < 2) pinch = null; return; }
     if (!down) return;
-    if (!down.moved && down.hit) { if (pressing) { impulse(pressing, -1.2); squish(1, -1.2); pokes++; onPoke(pokes); } else poke(down.hit); }
+    if (!down.moved && down.hit) {
+      awakeUntil = performance.now() + 6000;
+      if (pressing) { impulse(pressing, -1.2); squish(1, -1.2); pokes++; onPoke(pokes); }
+      else {
+        const now = performance.now();
+        if (now - lastTap < 320) { lastTap = 0; onDoubleTap(); }       // 두 번 톡 → 기록하기
+        else { lastTap = now; if (down.bead) { impulse(down.hit, 1.2); onBead(down.bead); } else poke(down.hit); }
+      }
+    }
     else if (down.moved && down.hit) {
       const f = down.fling.clone(), speed = f.length(), fresh = performance.now() - down.lastT < 120;
       if (fresh && speed > 3.2) {                    // 세게 당겼다 놓기 → 날아갑니다
@@ -295,7 +366,9 @@ export function mountSlime(container, { look = {}, onPoke = () => {}, reduced = 
       const h = height[i], w = stretching ? wPull[i] : 0;
       mesh.position.set(r.x + lean.x * h + pull.x * w + off[i * 3], r.y + pull.y * w + off[i * 3 + 1] - sag * h, r.z + lean.y * h + pull.z * w + off[i * 3 + 2]);
     }
-    for (const e of eyes) e.mesh.scale.y = blink > 0 ? 0.12 : 1;
+    stepBeads(dt, sag);
+    const asleep = night && performance.now() > awakeUntil;
+    for (const e of eyes) e.mesh.scale.y = asleep ? 0.1 : blink > 0 ? 0.12 : 1;
     blinkTimer -= dt; if (blinkTimer <= 0) { blink = 0.12; blinkTimer = 2.5 + Math.random() * 4; } if (blink > 0) blink -= dt;
     if (!reduced && !down && !flying) { idleTimer -= dt; if (idleTimer <= 0) { nudge(); idleTimer = 3.5 + Math.random() * 5; } }
   }
@@ -341,13 +414,21 @@ export function mountSlime(container, { look = {}, onPoke = () => {}, reduced = 
     },
     stretch(x = 1.2, y = 0.3, z = 0) { tmp.set(0.2, 0.3, 0.9).normalize(); grab({ local: tmp.clone(), push: tmp.clone().negate(), world: body.localToWorld(tmp.clone()) }); pull.set(x, y, z); pullV.set(0, 0, 0); },   // 확인용
     throw(x = 4, z = 0) { go.set(x, Math.min(3.4, Math.hypot(x, z) * 0.5), z); at.y = 0.02; spinAxis.set(0, 1, 0).cross(go).normalize(); spinRate = Math.min(9, go.length() * 1.3); },   // 확인용
+    setBeads,
+    beadCount() { return { total: beads.length, falling: beads.filter(b => b.falling).length }; },   // 확인용
+    setNight(on) {
+      night = !!on;
+      sun.intensity = night ? 0.9 : 2.4; sun.color.set(night ? 0xbfc8ff : 0xfff4df);
+      hemi.intensity = night ? 0.45 : 0.75; hemi.color.set(night ? 0xb9b4ff : 0xfff7e8);
+      beadMat.emissive.set(night ? 0x9a9a9a : 0x6a6a6a);                 // 밤엔 방울이 은은하게 빛남
+    },
     setLook(next) {
       look = { ...look, ...next };
       material.color.set(look.color); material.attenuationColor.set(look.color); material.transmission = look.clarity;
     },
     destroy() {
       running = false; window.removeEventListener('devicemotion', onMotion); renderer.setAnimationLoop(null); ro.disconnect(); document.removeEventListener('visibilitychange', onVisible);
-      geometry.dispose(); material.dispose(); eyeMat.dispose(); cheekMat.dispose(); floor.geometry.dispose(); floor.material.dispose(); sun.shadow.map?.dispose();
+      geometry.dispose(); material.dispose(); eyeMat.dispose(); cheekMat.dispose(); beadGeo.dispose(); beadMat.dispose(); beadMesh.dispose(); floor.geometry.dispose(); floor.material.dispose(); sun.shadow.map?.dispose();
       scene.environment?.dispose(); renderer.dispose(); canvas.remove(); delete container.__slime;
     }
   };
