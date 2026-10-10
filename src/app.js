@@ -3,7 +3,7 @@ import { mountSlime } from './slime.js';
 import { openStore, load, commit, previous } from './storage.js';
 import { BOOK_SEARCH_ENDPOINT, AI_ENDPOINT, AI_REFLECT_ENDPOINT } from './config.js';
 
-const BUILD = '1011d';   // 폰에서 어떤 판을 보고 있는지 확인용
+const BUILD = '1011e';   // 폰에서 어떤 판을 보고 있는지 확인용
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 let state = emptyState(), db, revision = 0, busy = false, ready = false;
@@ -237,11 +237,21 @@ function showSay(line) {
 const isNight = () => { const h = new Date().getHours(); return h >= 21 || h < 6; };
 function syncNight() { const n = isNight(); document.body.classList.toggle('night', n && route().page !== 'shelf'); slime?.setNight(n); }
 setInterval(() => { if (slime) syncNight(); }, 60000);
+// 첫 화면 위쪽의 작은 띠: 슬라임 이름표(누르면 '나')와 오늘 날짜(밤엔 달)
+function homeTop() {
+  const name = state.profile.catName || '나만의 슬라임', look = slimeLook(), n = beadList().length;
+  const d = new Date(), day = d.toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric', weekday: 'short' });
+  const icon = isNight()
+    ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 14.5A7.5 7.5 0 0 1 9.5 5a7.5 7.5 0 1 0 9.5 9.5z" fill="currentColor"/></svg>'
+    : '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2" fill="currentColor"/><path d="M12 2.5v2.6M12 18.9v2.6M2.5 12h2.6M18.9 12h2.6M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+  return `<a class="home-name" href="#me" aria-label="${esc(name)} — 나 화면으로">${miniSlime(look.color)}<b>${esc(name)}</b><span>방울 ${n}${look.tag ? ` · #${esc(look.tag)}` : ''}</span></a><span class="home-day">${icon}${esc(day)}</span>`;
+}
 function renderHome() {
   // 슬라임이 떠 있는 동안에는 말풍선만 바꿉니다 — 출렁이던 게 멈추지 않도록
-  if (slime && $('#slime-stage')) { $('#home-bubble').innerHTML = bubble(); syncAsk(); syncBeads(); return; }
+  if (slime && $('#slime-stage')) { $('#home-bubble').innerHTML = bubble(); syncAsk(); syncBeads(); $('#home-top').innerHTML = homeTop(); return; }
   askOpen = !state.profile.catName;   // 처음 만날 때만 열어 둡니다
   $('#main').innerHTML = `<section class="slime-home" aria-label="슬라임">
+    <div class="home-top" id="home-top">${homeTop()}</div>
     <div class="slime-stage" id="slime-stage"><div class="slime-say" id="slime-say" role="status" hidden></div></div>
     <div class="home-bubble" id="home-bubble" hidden>${bubble()}</div>
     <button class="ask-fab" id="ask-fab" aria-label="슬라임의 질문" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 9.5a3 3 0 1 1 4.6 2.5c-1 .7-1.6 1.3-1.6 2.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><circle cx="12" cy="18" r="1.4" fill="currentColor"/></svg><i class="ask-dot" hidden></i></button>

@@ -380,7 +380,7 @@ export function mountSlime(container, { look = {}, onPoke = () => {}, onBead = (
     if (!w || !h) return;
     renderer.setSize(w, h, false); camera.aspect = w / h;
     // 가로 시야를 고정해서 세로로 긴 폰에서도 슬라임이 화면의 절반쯤 차지하게
-    camera.fov = THREE.MathUtils.clamp(2 * Math.atan(0.285 / camera.aspect) * 180 / Math.PI, 24, 88);
+    camera.fov = THREE.MathUtils.clamp(2 * Math.atan(0.235 / camera.aspect) * 180 / Math.PI, 24, 88);
     camera.updateProjectionMatrix(); fitArena();
   }
   // 보이는 화면 안에서만 튕기도록 — 카메라 거리와 비율로 벽을 잽니다

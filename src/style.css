@@ -326,3 +326,18 @@ body.night .navigation a[aria-current=page]{background:#56497a;color:#fff3e6}
 .me-toggle{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
 .me-toggle .hint{margin:0;flex:1;min-width:12em}
 .me-foot{text-align:center;font-size:12px;color:var(--muted);margin:4px 0 0}
+
+/* 첫 화면 위쪽 띠 — 이름표와 날짜 */
+.home-top{position:absolute;top:calc(14px + env(safe-area-inset-top));left:14px;right:14px;z-index:3;display:flex;align-items:center;justify-content:space-between;gap:10px;pointer-events:none}
+.home-top>*{pointer-events:auto}
+.home-name{display:flex;align-items:center;gap:8px;min-height:44px;padding:5px 14px 5px 6px;background:var(--surface);border:3px solid var(--line);border-radius:999px;box-shadow:0 4px 0 var(--line);min-width:0}
+.home-name svg{width:30px;height:30px;flex:0 0 30px;background:var(--peach);border-radius:50%;padding:2px}
+.home-name b{font:400 16px/1 var(--head);white-space:nowrap}
+.home-name span{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.home-day{display:flex;align-items:center;gap:5px;min-height:38px;padding:4px 12px;background:var(--surface);border:3px solid var(--line);border-radius:999px;box-shadow:0 4px 0 var(--line);font:400 13px/1 var(--head);color:var(--muted);white-space:nowrap}
+.home-day svg{width:16px;height:16px;color:#f0a24a}
+.slime-say{top:calc(76px + env(safe-area-inset-top))}
+body.night .home-name,body.night .home-day{background:#3b3550;border-color:#5a5275;box-shadow:0 4px 0 #5a5275;color:#e9e3ff}
+body.night .home-name span,body.night .home-day{color:#bdb4e0}
+body.night .home-name svg{background:#56497a}
+body.night .home-day svg{color:#ffd98a}
