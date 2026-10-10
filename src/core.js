@@ -2,7 +2,7 @@ export const VERSION = 3;
 export const uid = () => crypto.randomUUID();
 export const now = () => new Date().toISOString();
 export const emptyProfile = () => ({ catName: '', tone: 'we', aiConsentAt: '' });
-export const emptyState = () => ({ version: VERSION, profile: emptyProfile(), books: [], thoughts: [], answers: [], moments: [], readings: {}, extraScales: [] });
+export const emptyState = () => ({ version: VERSION, profile: emptyProfile(), books: [], thoughts: [], answers: [], moments: [], readings: {}, insights: null, extraScales: [] });
 const object = v => v && typeof v === 'object' && !Array.isArray(v);
 function text(v, label, max = 100000, optional = false) {
   if (v == null && optional) return '';
@@ -62,8 +62,13 @@ export function normalize(input) {
   // 슬라임의 질문에 한 답 — 생각(스스로 떠오른 것)과는 다른 갈래
   const answers = !v3 ? [] : list(p.answers, '답', true).map(a => { row(a); return { id: id(a.id), createdAt: text(a.createdAt, '날짜', 100, true), prompt: text(a.prompt, '질문', 500, true), text: text(a.text, '답') }; });
   const readings = v3 && object(p.readings) ? structuredClone(p.readings) : {};
+  // 슬라임의 하루 말 — AI가 만든 '그땐/지금은' 몇 줄과 오늘의 질문. 형식이 어긋나면 버립니다(다시 만들면 됨).
+  const ins = v3 && object(p.insights) ? p.insights : null;
+  const insights = ins && typeof ins.date === 'string' && Array.isArray(ins.lines) && typeof ins.question === 'string'
+    ? { date: ins.date.slice(0, 10), at: text(ins.at, '날짜', 100, true), question: ins.question.slice(0, 120), lines: ins.lines.filter(l => object(l) && typeof l.text === 'string').slice(0, 6).map(l => ({ text: l.text.slice(0, 200), ids: Array.isArray(l.ids) ? l.ids.filter(x => typeof x === 'string').slice(0, 5) : [] })) }
+    : null;
   const extraScales = v3 && Array.isArray(p.extraScales) ? structuredClone(p.extraScales) : [];
-  return { version: VERSION, profile, books, thoughts, answers, moments, readings, extraScales };
+  return { version: VERSION, profile, books, thoughts, answers, moments, readings, insights, extraScales };
 }
 export function backup(state) { return JSON.stringify({ format: 'reading-notebook', exportedAt: now(), data: normalize(state) }, null, 2); }
 export function stats(s) { return { books: s.books.length, entries: s.books.reduce((n, b) => n + b.entries.length, 0), questions: s.books.reduce((n, b) => n + b.questions.length, 0), thoughts: s.thoughts.length, answers: s.answers.length, moments: s.moments.length }; }
@@ -109,7 +114,9 @@ export function nextQuestion(state, now = new Date(), skipped = []) {
   const book = [...state.books].reverse().find(b => b.status === 'reading');
   if (book && evening && !skipped.includes('book') && !book.entries.some(e => today(e.createdAt)))
     return { slot: 'book', title: '책', type: 'book', bookId: book.id, text: `『${book.title}』에서 오늘 머문 문장이 ${tone ? '있어?' : '있었나?'}` };
+  // 오늘 슬라임이 기록을 읽고 만든 질문이 있으면 그걸, 없으면 미리 써 둔 질문을
+  const custom = state.insights?.date === date && state.insights.question;
   if (!skipped.includes('prompt') && !state.answers.some(a => today(a.createdAt)))
-    return { slot: 'prompt', title: '오늘의 질문', type: 'moment', text: PROMPTS[Number(date.replaceAll('-', '')) % PROMPTS.length][tone] };
+    return { slot: 'prompt', title: '오늘의 질문', type: 'moment', text: custom || PROMPTS[Number(date.replaceAll('-', '')) % PROMPTS.length][tone] };
   return null;
 }

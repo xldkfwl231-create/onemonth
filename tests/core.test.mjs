@@ -55,3 +55,12 @@ test('the cat asks for a sentence in the evening, one observation a day, then re
 test('late night belongs to the previous day',() => {
   assert.equal(dayOf(new Date(2026,8,30,2,0)),'2026-09-29'); assert.equal(dayOf(new Date(2026,8,30,5,0)),'2026-09-30');
 });
+
+test('the slime asks today\'s own question when it has one, and bad insights are dropped', () => {
+  const s = emptyState(), at = new Date(2026,9,11,9);
+  s.insights = { date: '2026-10-11', at: '', question: '오늘은 누구랑 있을 때 편했어?', lines: [{ text: '그땐', ids: ['x'] }] };
+  assert.equal(nextQuestion(s, at).text, '오늘은 누구랑 있을 때 편했어?');
+  s.insights.date = '2026-10-10'; assert.notEqual(nextQuestion(s, at).text, '오늘은 누구랑 있을 때 편했어?');
+  assert.deepEqual(normalize(JSON.parse(backup({ ...s, insights: { date: 3 } }))).insights, null);
+  assert.equal(normalize(JSON.parse(backup(s))).insights.lines[0].text, '그땐');
+});

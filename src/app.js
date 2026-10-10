@@ -1,9 +1,9 @@
 import { uid, now, emptyState, normalize, backup, stats, matchesBook, dateLabel, safeCover, dayOf, nextQuestion, isIso } from './core.js';
 import { mountSlime } from './slime.js';
 import { openStore, load, commit, previous } from './storage.js';
-import { BOOK_SEARCH_ENDPOINT, AI_ENDPOINT } from './config.js';
+import { BOOK_SEARCH_ENDPOINT, AI_ENDPOINT, AI_REFLECT_ENDPOINT } from './config.js';
 
-const BUILD = '1011b';   // 폰에서 어떤 판을 보고 있는지 확인용
+const BUILD = '1011c';   // 폰에서 어떤 판을 보고 있는지 확인용
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 let state = emptyState(), db, revision = 0, busy = false, ready = false;
@@ -99,7 +99,11 @@ function sayLines() {
   ];
 }
 function maybeSay(pokes) {
-  const el = $('#slime-say'); if (!el || pokes < 2 || Math.random() > 0.35) return;
+  const el = $('#slime-say'); if (!el) return;
+  // 오늘 슬라임이 만든 말이 남아 있으면 그걸 먼저 — 만지기 시작하면 바로
+  const fresh = state.insights?.date === todayKey() ? state.insights.lines.map(l => l.text).filter(t => !saidToday.has(t)) : [];
+  if (fresh.length && (pokes === 1 || Math.random() < 0.6)) { saidToday.add(fresh[0]); showSay(fresh[0]); return; }
+  if (pokes < 2 || Math.random() > 0.35) return;
   let dayCount = 0; try { dayCount = Number(localStorage.getItem(`slime-said:${todayKey()}`) || 0); } catch {}
   if (dayCount >= 3) return;
   const lines = sayLines().filter(l => !saidToday.has(l)); if (!lines.length) return;
@@ -140,12 +144,13 @@ let reading = false, readBackoff = 0;
 async function readRecords() {
   if (reading || !ready || busy || !state.profile.aiConsentAt || !AI_ENDPOINT || !navigator.onLine || Date.now() < readBackoff) return;
   const todo = aiSources().filter(x => state.readings[x.id]?.h !== x.h).slice(0, 25);
-  if (!todo.length) return;
+  if (!todo.length) return reflectToday();
   reading = true;
   try {
     const res = await fetch(AI_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items: todo.map(({ id, text }) => ({ id, text })), known: tagCounts().slice(0, 80).map(x => x[0]) }), signal: AbortSignal.timeout(30000) });
     if (!res.ok) throw new Error(String(res.status));
-    const got = new Map(((await res.json()).items || []).map(x => [x.id, x.tags]));
+    const body = await res.json(); if (!Array.isArray(body?.items)) throw new Error('bad reply');
+    const got = new Map(body.items.map(x => [x.id, x.tags]));
     reading = false;
     await change(s => {
       const live = new Set(aiSources().map(x => x.id));
@@ -154,6 +159,31 @@ async function readRecords() {
     }, '');
   } catch { readBackoff = Date.now() + 5 * 60e3; }
   finally { reading = false; }
+}
+// 하루 한 번: 슬라임이 기록을 읽고 '그땐/지금은' 몇 줄과 오늘의 질문을 만들어 둡니다
+let reflecting = false, reflectBackoff = 0;
+async function reflectToday() {
+  const date = todayKey();
+  if (reflecting || !ready || busy || !state.profile.aiConsentAt || !AI_REFLECT_ENDPOINT || !navigator.onLine || Date.now() < reflectBackoff || (state.insights?.date === date && (state.insights.lines.length || state.insights.question))) return;
+  const kindOf = { thought: '생각', answer: '답', entry: '책 메모' }, src = new Map(aiSources().map(x => [x.id, x]));
+  const all = beadList().filter(b => src.has(b.id)).reverse();   // 최근 것부터
+  if (all.length < 3) return;
+  const cut = Date.now() - 21 * 864e5, recent = all.filter(b => b.at >= cut).slice(0, 35), older = all.filter(b => b.at < cut).slice(0, 60 - Math.min(35, recent.length));
+  const pick = [...recent, ...older].slice(0, 60).reverse();   // 오래된 것부터 읽게
+  if (pick.length < 3) return;
+  reflecting = true;
+  try {
+    const res = await fetch(AI_REFLECT_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(45000), body: JSON.stringify({
+      name: state.profile.catName || '슬라임', tone: state.profile.tone, today: date,
+      items: pick.map(b => ({ id: b.id, date: b.at ? new Date(b.at).toISOString().slice(0, 10) : '', kind: kindOf[b.kind], text: src.get(b.id).text.slice(0, 400), tags: state.readings[b.id]?.tags || [] }))
+    }) });
+    if (!res.ok) throw new Error(String(res.status));
+    const out = await res.json();
+    if (!Array.isArray(out?.lines) || typeof out.question !== 'string' || (!out.lines.length && !out.question)) throw new Error('bad reply');
+    reflecting = false;
+    await change(s => { s.insights = { date, at: now(), question: out.question || '', lines: (out.lines || []).map(l => ({ text: l.text, ids: l.ids || [] })) }; }, '');
+  } catch { reflectBackoff = Date.now() + 15 * 60e3; }
+  finally { reflecting = false; }
 }
 // 요즘(60일) 가장 많은 주제가 슬라임 겉색에 스밉니다
 function slimeLook() {
@@ -374,7 +404,8 @@ function download(content, filename) {
 function exportState(data = state, prefix = 'my-slime') { download(backup(data),`${prefix}-${new Date().toISOString().slice(0,10)}.json`); }
 function aiStatus() {
   const all = aiSources(), done = all.filter(x => state.readings[x.id]?.h === x.h).length;
-  return state.profile.aiConsentAt ? `${all.length}개 중 ${done}개를 읽었습니다.${readBackoff > Date.now() ? ' 지금은 연결이 안 돼서 잠시 뒤 다시 시도합니다.' : ''}` : '꺼져 있습니다. 켜기 전까지는 아무것도 보내지 않습니다.';
+  const today = state.insights?.date === todayKey() ? ` 오늘의 말 ${state.insights.lines.length}줄을 만들어 뒀습니다.` : '';
+  return state.profile.aiConsentAt ? `${all.length}개 중 ${done}개를 읽었습니다.${today}${readBackoff > Date.now() || reflectBackoff > Date.now() ? ' 지금은 연결이 안 돼서 잠시 뒤 다시 시도합니다.' : ''}` : '꺼져 있습니다. 켜기 전까지는 아무것도 보내지 않습니다.';
 }
 function settings() {
   const s = stats(state);

@@ -53,3 +53,24 @@ test('health tells whether the key is set without revealing it', async () => {
   assert.ok(!text.includes('secret-value'));
   assert.equal(JSON.parse(text).key, true);
 });
+
+test('reflect: speaks as the slime, keeps only known ids, trims lengths', async () => {
+  let body;
+  fakeAI({ stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify({ lines: [{ text: '9월엔 우리 회의 끝나고 지쳤다고 했는데, 요즘은 회의 얘기가 없네. 그사이 뭐가 달라졌을까?', ids: ['t1', 'nope'] }, { text: '   ', ids: [] }], question: '오늘 기운이 났던 순간은 어땠어?' }) }] },
+    (url, init) => { body = JSON.parse(init.body); });
+  const items = [{ id: 't1', date: '2026-09-20', kind: '생각', text: '회의만 끝나면 기운이 빠진다', tags: ['회의'] }, { id: 't2', date: '2026-10-03', kind: '생각', text: '리더십', tags: [] }, { id: 't3', date: '2026-10-08', kind: '답', text: '쇼츠', tags: [] }];
+  const res = await call({ name: '말랑', tone: 'we', today: '2026-10-11', items }, { path: '/ai/reflect' });
+  assert.equal(res.status, 200);
+  const out = await res.json();
+  assert.equal(out.lines.length, 1);
+  assert.deepEqual(out.lines[0].ids, ['t1']);
+  assert.equal(out.question, '오늘 기운이 났던 순간은 어땠어?');
+  assert.match(body.system, /말랑/); assert.match(body.system, /우리/);
+  assert.equal(body.output_config.effort, 'medium');
+});
+
+test('reflect: needs at least 3 records and an allowed site', async () => {
+  fakeAI({});
+  assert.equal((await call({ items: [{ id: 'a', text: 'x' }] }, { path: '/ai/reflect' })).status, 400);
+  assert.equal((await call({ items: [1, 2, 3].map(i => ({ id: 'a' + i, text: 'x' })) }, { path: '/ai/reflect', origin: 'https://evil.example' })).status, 403);
+});
