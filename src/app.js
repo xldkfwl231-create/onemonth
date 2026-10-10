@@ -72,7 +72,7 @@ function spines(books) {
 // ── 슬라임 · 순간 ──────────────────────────────────────────
 const say = pair => pair[state.profile.tone === 'you' ? 1 : 0];
 const todayKey = () => dayOf(new Date());
-let slime = null, saidToday = new Set();
+let slime = null, saidToday = new Set(), askOpen = false;   // 질문 상자가 펼쳐져 있는지
 // 오늘 넘어간 질문은 이 기기에만 잠깐 기억합니다 — 기록이 아니라서 데이터에 넣지 않습니다.
 const skipped = () => { try { return JSON.parse(localStorage.getItem(`cat-skip:${todayKey()}`) || '[]'); } catch { return []; } };
 function skip(slot) { try { localStorage.setItem(`cat-skip:${todayKey()}`, JSON.stringify([...skipped(), slot])); } catch {} renderHome(); }
@@ -104,13 +104,24 @@ function maybeSay(pokes) {
   el.textContent = line; el.hidden = false; el.classList.add('show');
   clearTimeout(maybeSay.timer); maybeSay.timer = setTimeout(() => { el.classList.remove('show'); setTimeout(() => { el.hidden = true; }, 400); }, 7000);
 }
+// 물음표 단추: 물을 게 있으면 점이 켜지고, 누르면 질문 상자가 펼쳐집니다
+function syncAsk() {
+  const fab = $('#ask-fab'), box = $('#home-bubble'); if (!fab || !box) return;
+  const pending = !state.profile.catName || !!nextQuestion(state, new Date(), skipped());
+  if (!pending) askOpen = false;
+  box.hidden = !askOpen; fab.setAttribute('aria-expanded', String(askOpen)); fab.classList.toggle('open', askOpen);
+  fab.querySelector('.ask-dot').hidden = !pending || askOpen;
+}
 function renderHome() {
   // 슬라임이 떠 있는 동안에는 말풍선만 바꿉니다 — 출렁이던 게 멈추지 않도록
-  if (slime && $('#slime-stage')) { $('#home-bubble').innerHTML = bubble(); return; }
+  if (slime && $('#slime-stage')) { $('#home-bubble').innerHTML = bubble(); syncAsk(); return; }
+  askOpen = !state.profile.catName;   // 처음 만날 때만 열어 둡니다
   $('#main').innerHTML = `<section class="slime-home" aria-label="슬라임">
     <div class="slime-stage" id="slime-stage"><div class="slime-say" id="slime-say" role="status" hidden></div></div>
-    <div class="home-bubble" id="home-bubble">${bubble()}</div>
+    <div class="home-bubble" id="home-bubble" hidden>${bubble()}</div>
+    <button class="ask-fab" id="ask-fab" aria-label="슬라임의 질문" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 9.5a3 3 0 1 1 4.6 2.5c-1 .7-1.6 1.3-1.6 2.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><circle cx="12" cy="18" r="1.4" fill="currentColor"/></svg><i class="ask-dot" hidden></i></button>
   </section>`;
+  syncAsk();
   try { slime = mountSlime($('#slime-stage'), { onPoke: maybeSay, reduced: matchMedia('(prefers-reduced-motion: reduce)').matches }); }
   catch (e) { $('#slime-stage').innerHTML = `<p class="empty">이 브라우저에서는 슬라임을 그릴 수 없습니다.<br><small>${esc(e.message)}</small></p>`; }
 }
@@ -327,6 +338,7 @@ document.addEventListener('click', e => {
     case 'cat-book': recordEditor('entries', book); break;
     case 'cat-skip': skip(btn.dataset.slot); break;
   }
+  if (btn.id === 'ask-fab') { askOpen = !askOpen; syncAsk(); }
 });
 $('#settings').onclick = () => { if (ready && !busy) settings(); };
 window.addEventListener('hashchange',() => { if (dialog.open) closeModal(); render(); window.scrollTo(0,0); });

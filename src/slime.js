@@ -89,7 +89,8 @@ export function mountSlime(container, { look = {}, onPoke = () => {}, reduced = 
   const lean = new THREE.Vector2(), leanV = new THREE.Vector2();
   const pull = new THREE.Vector3(), pullV = new THREE.Vector3(); let grabLocal = null;
   const sq = [1, 1, 1], sqv = [0, 0, 0];
-  const at = new THREE.Vector3(), go = new THREE.Vector3();                       // 자리(x·z 바닥, y 뛰어오른 높이), 속도
+  const HOME = new THREE.Vector3(0, 0, -0.75);                                   // 쉬는 자리 — 화면 위쪽, 질문 상자에 안 가리게
+  const at = HOME.clone(), go = new THREE.Vector3();                             // 자리(x·z 바닥, y 뛰어오른 높이), 속도
   const tumble = new THREE.Quaternion(), spinAxis = new THREE.Vector3(0, 0, 1); let spinRate = 0;   // 날아가며 구르기
   let lastT = performance.now(), idleTimer = 1.5, blinkTimer = 2.5, blink = 0;
   let down = null, pressing = null, pinch = null, pokes = 0, running = true;
@@ -248,7 +249,7 @@ export function mountSlime(container, { look = {}, onPoke = () => {}, reduced = 
     }
     if (at.y === 0 && spinRate === 0) tumble.slerp(upright, 1 - Math.exp(-7 * dt));   // 떨어지면 다시 바로 섭니다
     // 바닥에 내려앉으면 천천히 가운데로 미끄러져 돌아옵니다 (오목한 접시 위처럼)
-    if (!dragging && at.y === 0 && (at.x !== 0 || at.z !== 0)) { const d = Math.hypot(at.x, at.z); if (d < 0.12 && go.lengthSq() < 0.04) { at.x = at.z = 0; go.set(0, 0, 0); } else { go.x -= at.x * 2.6 * dt; go.z -= at.z * 2.6 * dt; const slow = Math.exp(-1.2 * dt); go.x *= slow; go.z *= slow; at.x += go.x * dt * (flying ? 0 : 1); at.z += go.z * dt * (flying ? 0 : 1); } }
+    if (!dragging && at.y === 0 && (at.x !== HOME.x || at.z !== HOME.z)) { const dx = at.x - HOME.x, dz = at.z - HOME.z, d = Math.hypot(dx, dz); if (d < 0.12 && go.lengthSq() < 0.04) { at.x = HOME.x; at.z = HOME.z; go.set(0, 0, 0); } else { go.x -= dx * 2.6 * dt; go.z -= dz * 2.6 * dt; const slow = Math.exp(-1.2 * dt); go.x *= slow; go.z *= slow; at.x += go.x * dt * (flying ? 0 : 1); at.z += go.z * dt * (flying ? 0 : 1); } }
     // 몸 전체의 눌림 스프링
     for (let a = 0; a < 3; a++) { sqv[a] += (-k * 0.9 * (sq[a] - 1) - c * 1.4 * sqv[a]) * dt; sq[a] = THREE.MathUtils.clamp(sq[a] + sqv[a] * dt, 0.55, 1.4); }
     const breathe = reduced ? 0 : Math.sin(performance.now() / 1900) * 0.012;
