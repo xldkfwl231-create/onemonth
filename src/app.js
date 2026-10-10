@@ -1,9 +1,9 @@
-import { uid, now, emptyState, normalize, backup, stats, matchesBook, dateLabel, dayKey, safeCover, FIELDS, ENERGY, WITH, CHOSEN, emptyDay, getField, setField, dayOf, slotsFor, nextQuestion, catMood, sleepMinutes, scaleLabel, isIso } from './core.js';
+import { uid, now, emptyState, normalize, backup, stats, matchesBook, dateLabel, dayKey, safeCover, ENERGY, WITH, CHOSEN, dayOf, nextQuestion, isIso } from './core.js';
 import { catSvg } from './cat.js';
 import { openStore, load, commit, previous } from './storage.js';
 import { BOOK_SEARCH_ENDPOINT } from './config.js';
 
-const BUILD = '0930a';   // 폰에서 어떤 판을 보고 있는지 확인용
+const BUILD = '1010a';   // 폰에서 어떤 판을 보고 있는지 확인용
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 let state = emptyState(), db, revision = 0, busy = false, ready = false;
@@ -47,15 +47,14 @@ const currentBook = () => state.books.find(b => b.id === route().id);
 function render() {
   if (!ready) return;
   const { page } = route();
-  const tab = { book:'shelf', questions:'shelf', shelf:'shelf', day:'day', moments:'day', trips:'day', thoughts:'thoughts' }[page] || 'cat';
+  const tab = { book:'shelf', questions:'shelf', shelf:'shelf', moments:'moments', trips:'moments', day:'moments', thoughts:'thoughts' }[page] || 'cat';
   document.querySelectorAll('[data-nav]').forEach(a => { if (a.dataset.nav === tab) a.setAttribute('aria-current','page'); else a.removeAttribute('aria-current'); });
   document.body.dataset.page = page;
   if (page === 'book') renderBook();
   else if (page === 'questions') renderQuestions();
   else if (page === 'thoughts') renderThoughts();
   else if (page === 'shelf') renderShelf();
-  else if (page === 'day') renderDay();
-  else if (page === 'moments' || page === 'trips') renderMoments();
+  else if (page === 'moments' || page === 'trips' || page === 'day') renderMoments();
   else renderCat();
 }
 
@@ -70,40 +69,27 @@ function spines(books) {
       style="left:${left}%;bottom:${shelf}%;height:${h}%;background:${SPINE[b.color] || SPINE.forest}"></a>`;
   }).join('');
 }
-// ── 고양이 · 하루 · 순간 ─────────────────────────────────────
+// ── 고양이 · 순간 ───────────────────────────────────────────
 const say = pair => pair[state.profile.tone === 'you' ? 1 : 0];
 const todayKey = () => dayOf(new Date());
-let catchUp = '';   // 지나간 칸을 되짚기로 한 날
-const dayRecord = date => state.days.find(d => d.date === date) || emptyDay(date);
-const momentsOn = date => state.moments.filter(m => isIso(m.createdAt) && dayOf(new Date(m.createdAt)) === date);
 const labelOf = (options, value) => options.find(o => o[0] === value)?.[1] || '';
-const chips = (options, current, attrs) => options.map(([v, l]) => `<button class="chip" ${attrs} data-value="${v}" aria-pressed="${current === v}">${esc(l)}</button>`).join('');
-const SCALE = [1, 2, 3, 4, 5].map(n => [n, String(n)]);
-function setDay(date, edit) {
-  return change(s => { let d = s.days.find(x => x.date === date); if (!d) { d = emptyDay(date); s.days.push(d); } edit(d); }, '');
-}
-function shiftDate(date, n) { const d = new Date(`${date}T12:00:00`); d.setDate(d.getDate() + n); return dayKey(d.toISOString()); }
+// 오늘 넘어간 질문은 이 기기에만 잠깐 기억합니다 — 기록이 아니라서 데이터에 넣지 않습니다.
+const skipped = () => { try { return JSON.parse(localStorage.getItem(`cat-skip:${todayKey()}`) || '[]'); } catch { return []; } };
+function skip(slot) { try { localStorage.setItem(`cat-skip:${todayKey()}`, JSON.stringify([...skipped(), slot])); } catch {} renderCat(); }
 function bubble() {
   if (!state.profile.catName) return `<div class="bubble"><p class="bubble-text">안녕. 나는 아직 이름이 없는 고양이야. 이름을 지어 줄래?</p><div class="bubble-actions"><button class="primary" data-action="profile">이름 지어 주기</button></div></div>`;
-  const q = nextQuestion(state, new Date(), catchUp === todayKey());
+  const q = nextQuestion(state, new Date(), skipped());
   if (!q) return `<div class="bubble done"><p class="bubble-text">${say(['오늘 관찰은 여기까지. 잘 지켜봤다.', '오늘 관찰은 여기까지야. 고마워.'])}</p></div>`;
   let body;
-  if (q.type === 'choice') body = `<div class="chips">${chips(q.options, '', `data-action="cat-answer" data-key="${q.key}"`)}</div>`;
-  else if (q.type === 'scale') body = `<div class="chips scale">${chips(SCALE, 0, `data-action="cat-answer" data-key="${q.key}"`)}</div><p class="scale-ends"><span>${scaleLabel(1)}</span><span>${scaleLabel(5)}</span></p>`;
-  else if (q.type === 'time') {
-    const d = new Date(), value = q.key === 'wakeAt' ? state.profile.schedule.wake : `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-    body = `<div class="time-row"><label class="visually-hidden" for="cat-time">시각</label><input type="time" id="cat-time" value="${value}"><button class="primary" data-action="cat-time" data-key="${q.key}">이때</button></div>`;
-  }
-  else if (q.type === 'catchup') body = `<div class="bubble-actions"><button class="primary" data-action="cat-catchup">이어서 답하기</button></div>`;
-  else if (q.type === 'book') body = `<div class="bubble-actions"><button class="primary" data-action="cat-book" data-book="${esc(q.bookId)}">문장 남기기</button></div>`;
+  if (q.type === 'book') body = `<div class="bubble-actions"><button class="primary" data-action="cat-book" data-book="${esc(q.bookId)}">문장 남기기</button></div>`;
   else body = `<div class="bubble-actions"><button class="primary" data-action="cat-moment" data-prompt="${esc(q.text)}">적어 볼게</button></div>`;
   return `<div class="bubble"><p class="bubble-slot">${esc(q.title)}</p><p class="bubble-text">${esc(q.text)}</p>${body}<button class="quiet skip-q" data-action="cat-skip" data-slot="${q.slot}">오늘은 넘어갈래</button></div>`;
 }
 function renderCat() {
-  const date = todayKey(), day = dayRecord(date), s = stats(state), name = state.profile.catName;
+  const date = todayKey(), s = stats(state), name = state.profile.catName;
   const reading = state.books.filter(b => b.status === 'reading');
   const current = reading[reading.length - 1] || state.books[state.books.length - 1];
-  const seen = s.entries + s.questions + s.thoughts + s.moments + state.days.reduce((n, d) => n + FIELDS.filter(f => getField(d, f.key)).length, 0);
+  const seen = s.entries + s.questions + s.thoughts + s.moments;
   const today = new Date(`${date}T12:00:00`).toLocaleDateString('ko-KR', { year:'numeric', month:'long', day:'numeric', weekday:'short' });
   $('#main').innerHTML = `<section class="room cat-home" aria-labelledby="room-title">
     <p class="room-date">${esc(today)}</p>
@@ -114,10 +100,10 @@ function renderCat() {
       ${spines(state.books)}
       <a class="hotspot board" href="#thoughts" aria-label="생각 ${state.thoughts.length}개"></a>
       <a class="hotspot shelf" href="#shelf" aria-label="책 ${state.books.length}권"></a>
-      <div class="cat-spot">${catSvg(catMood(day), esc(name || '고양이'))}</div>
+      <div class="cat-spot">${catSvg('calm', esc(name || '고양이'))}</div>
     </div>
     ${bubble()}
-    <div class="cat-actions"><button data-action="add-moment">＋ 순간 남기기</button><a class="text-link" href="#day">오늘 하루 <span aria-hidden="true">›</span></a></div>
+    <div class="cat-actions"><button data-action="add-moment">＋ 순간 남기기</button><a class="text-link" href="#moments">남긴 순간 ${s.moments} <span aria-hidden="true">›</span></a></div>
     ${current ? `<div class="room-current">
       <a class="room-book" href="#book/${esc(current.id)}">${cover(current)}</a>
       <div class="room-meta">
@@ -133,28 +119,8 @@ function momentCard(m) {
   const tags = [labelOf(ENERGY, m.energy), labelOf(WITH, m.with), labelOf(CHOSEN, m.chosen)].filter(Boolean);
   return `<article class="record"><div class="meta"><span>${esc(dateLabel(m.createdAt))}${m.from === 'cat' ? ' · 고양이가 물어서' : ''}</span><span aria-hidden="true">순간</span></div>${m.place ? `<h3>${esc(m.place)}</h3>` : ''}<p class="record-text">${esc(m.text)}</p>${tags.length ? `<p class="tags">${tags.map(t => `<span class="status-tag">${esc(t)}</span>`).join('')}</p>` : ''}<div class="record-actions"><button data-action="edit-moment" data-id="${esc(m.id)}">수정</button><button data-action="delete-record" data-type="moments" data-id="${esc(m.id)}">삭제</button></div></article>`;
 }
-function dayField(f, day, date) {
-  const value = getField(day, f.key), attrs = `data-action="day-set" data-date="${date}" data-key="${f.key}"`, id = `d-${f.key.replace('.', '-')}`;
-  if (f.key.startsWith('commute.') && f.key !== 'commute.ride' && day.commute.ride === 'home') return '';
-  if (f.type === 'choice') return `<div class="slot-field"><p class="slot-label">${f.label}</p><div class="chips">${chips(f.options, value, attrs)}</div></div>`;
-  if (f.type === 'scale') return `<div class="slot-field"><p class="slot-label">${f.label}${value ? ` · ${scaleLabel(value)}` : ''}</p><div class="chips scale">${chips(SCALE, value, attrs)}</div></div>`;
-  return `<div class="slot-field"><label class="slot-label" for="${id}">${f.label}${f.type === 'text' ? ' · 선택' : ''}</label><input id="${id}" type="${f.type}" ${f.type === 'text' ? 'maxlength="300"' : ''} data-day-input="${f.key}" value="${esc(value)}"></div>`;
-}
-function renderDay() {
-  const today = todayKey(); let date = route().id;
-  if (!/^\d{4}-\d\d-\d\d$/.test(date || '') || date > today) date = today;
-  const day = dayRecord(date), sleep = sleepMinutes(state.days.find(d => d.date === shiftDate(date, -1)), day), list = momentsOn(date).reverse();
-  const title = new Date(`${date}T12:00:00`).toLocaleDateString('ko-KR', { month:'long', day:'numeric', weekday:'long' });
-  $('#main').innerHTML = `<div class="narrow"><div class="day-nav"><a href="#day/${shiftDate(date, -1)}" aria-label="전날">‹</a><div><p class="eyebrow">${date === today ? 'TODAY' : esc(date)}</p><h1>${esc(title)}</h1></div>${date < today ? `<a href="#day/${shiftDate(date, 1)}" aria-label="다음 날">›</a>` : '<span></span>'}</div>
-    <p class="hint day-hint">판단 없이, 본 대로. 누른 칸을 다시 누르면 지워집니다.</p>
-    ${slotsFor(state.profile, date).map(slot => `<section class="slot" aria-label="${slot.title}"><h2>${slot.title}</h2>${slot.fields.map(f => dayField(f, day, date)).join('')}${slot.id === 'morning' && sleep ? `<p class="hint">잔 시간 ${Math.floor(sleep / 60)}시간${sleep % 60 ? ` ${sleep % 60}분` : ''}</p>` : ''}</section>`).join('')}
-    <div class="summary-line"><span>이날의 순간 ${list.length}</span></div>
-    <div class="record-list">${list.map(momentCard).join('')}</div>
-    <div class="cat-actions">${date === today ? '<button data-action="add-moment">＋ 순간 남기기</button>' : '<span></span>'}<a class="text-link" href="#moments">모든 순간 ${state.moments.length} <span aria-hidden="true">›</span></a></div></div>`;
-  document.querySelectorAll('[data-day-input]').forEach(el => { el.onchange = () => setDay(date, d => setField(d, el.dataset.dayInput, el.value.trim())); });
-}
 function renderMoments() {
-  $('#main').innerHTML = `<div class="narrow"><a class="back" href="#day">← 하루로</a><div class="intro"><div><p class="eyebrow">MOMENTS</p><h1>남긴 순간</h1><p>무엇을 했는지보다, 그때 어땠는지.</p></div><button class="primary intro-actions" data-action="add-moment">＋ 순간</button></div><div class="record-list">${[...state.moments].reverse().map(momentCard).join('') || empty('한 장면, 한 줄부터', '운동, 코딩, 게임, 사람. 무엇이든 본 대로 적어 보세요.')}</div></div>`;
+  $('#main').innerHTML = `<div class="narrow"><a class="back" href="#cat">← 고양이에게</a><div class="intro"><div><p class="eyebrow">MOMENTS</p><h1>남긴 순간</h1><p>무엇을 했는지보다, 그때 어땠는지.</p></div><button class="primary intro-actions" data-action="add-moment">＋ 순간</button></div><div class="record-list">${[...state.moments].reverse().map(momentCard).join('') || empty('한 장면, 한 줄부터', '운동, 코딩, 게임, 사람. 무엇이든 본 대로 적어 보세요.')}</div></div>`;
 }
 function renderShelf() {
   $('#main').innerHTML = `<section aria-labelledby="shelf-title"><div class="intro"><div><p class="eyebrow">MY LITTLE LIBRARY</p><h1 id="shelf-title">나의 책장</h1><p>읽다가 머문 자리마다, 나만의 기록이 쌓입니다. <a class="text-link" href="#questions">남은 질문 ${state.books.reduce((n, b) => n + b.questions.filter(q => !q.answer).length, 0)} ›</a></p></div><button class="primary intro-actions" data-action="add-book">＋ 책 추가</button></div><div class="toolbar"><div class="filters" aria-label="독서 상태">${[['all','전체'],['reading','읽는 중'],['finished','다 읽음']].map(([v,l]) => `<button data-filter="${v}" aria-pressed="${filter === v}">${l}</button>`).join('')}</div><div class="search-field"><label class="visually-hidden" for="local-search">책과 기록 검색</label><input type="search" id="local-search" placeholder="책 제목, 문장, 질문 찾기" value="${esc(query)}"></div></div><div id="shelf-results"></div></section>`;
@@ -291,79 +257,11 @@ function momentEditor(id, prompt = '') {
   }));
 }
 function profileEditor() {
-  const p = state.profile, first = !p.catName, time = (label, name) => field(label, name, p.schedule[name], 'type="time" required');
-  openModal(first ? '고양이와 처음 만나기' : '고양이 설정', `<p class="hint">이 고양이는 나를 닮았습니다. 좋은 답도 나쁜 답도 없으니, 본 대로만 알려 주세요.</p><form id="edit-form">${field('고양이 이름','catName',p.catName,'required maxlength="30" placeholder="예: 보리"')}${radios('고양이 말투','tone',[['we','“우리 오늘 몇 시에 일어났지?”'],['you','“오늘 몇 시에 일어났어?”']],p.tone,false)}<p class="hint">평소 시각을 알려 주면 그때에 맞춰 묻습니다.</p><div class="field-row">${time('일어나는 시각','wake')}${time('집을 나서는 시각','leave')}</div><div class="field-row">${time('일을 마치는 시각','back')}${time('눕는 시각','bed')}</div><fieldset class="field pick"><legend>출근하는 요일</legend><div class="chips">${[[1,'월'],[2,'화'],[3,'수'],[4,'목'],[5,'금'],[6,'토'],[0,'일']].map(([v,l]) => `<label class="chip-radio"><input type="checkbox" name="workdays" value="${v}" ${p.workdays.includes(v) ? 'checked' : ''}><span>${l}</span></label>`).join('')}</div></fieldset>${submit(first ? '만나서 반가워' : '저장')}</form>`);
+  const p = state.profile, first = !p.catName;
+  openModal(first ? '고양이와 처음 만나기' : '고양이 설정', `<p class="hint">이 고양이는 나를 닮았습니다. 좋은 답도 나쁜 답도 없으니, 본 대로만 알려 주세요.</p><form id="edit-form">${field('고양이 이름','catName',p.catName,'required maxlength="30" placeholder="예: 보리"')}${radios('고양이 말투','tone',[['we','“우리 오늘 뭘 봤지?”'],['you','“오늘 뭘 봤어?”']],p.tone,false)}${submit(first ? '만나서 반가워' : '저장')}</form>`);
   formHandler(data => {
     const catName = data.get('catName').trim(); if (!catName) throw new Error('고양이 이름을 지어 주세요.');
-    return change(s => { s.profile = { ...s.profile, catName, tone: data.get('tone') === 'you' ? 'you' : 'we', schedule: { wake: data.get('wake'), leave: data.get('leave'), back: data.get('back'), bed: data.get('bed') }, workdays: data.getAll('workdays').map(Number) }; }, first ? `${catName}, 만나서 반가워.` : '고양이 설정을 저장했습니다.');
-  });
-}
-async function imageData(file) {
-  if (!['image/jpeg','image/png','image/webp'].includes(file.type)) throw new Error('JPG, PNG, WebP 사진을 선택해주세요. HEIC 사진은 JPG로 변환해주세요.');
-  if (file.size > 20 * 1024 * 1024) throw new Error('20MB 이하의 사진을 선택해주세요.');
-  const bitmap = await createImageBitmap(file);
-  try {
-    const ratio = Math.min(1,800 / Math.max(bitmap.width,bitmap.height));
-    const canvas = document.createElement('canvas'); canvas.width = Math.max(1,Math.round(bitmap.width * ratio)); canvas.height = Math.max(1,Math.round(bitmap.height * ratio));
-    const ctx = canvas.getContext('2d'); ctx.fillStyle = '#fcfaf3'; ctx.fillRect(0,0,canvas.width,canvas.height); ctx.drawImage(bitmap,0,0,canvas.width,canvas.height);
-    return canvas.toDataURL('image/jpeg',.84);
-  } finally { bitmap.close(); }
-}
-function bookEditor(existing) {
-  let selectedCover = existing?.cover || '', selectedColor = existing?.color || 'forest', imageBusy = false;
-  let controller, requestId = 0, alive = true;
-  openModal(existing ? '책 정보 수정' : '책장에 한 권 더', `<div class="search-box"><label for="book-query">제목이나 ISBN으로 표지 찾기</label><div class="search-row"><input type="search" id="book-query" placeholder="책 제목 또는 ISBN" maxlength="200"><button id="search-books" type="button">검색</button></div><p class="hint" style="margin:8px 0 0">검색어는 ${BOOK_SEARCH_ENDPOINT ? '연결된 도서 검색 서비스' : 'Open Library'}로 전송됩니다. ${BOOK_SEARCH_ENDPOINT ? '' : '국내 도서는 없거나 다른 판본일 수 있어요.'}</p><div id="search-status" class="hint" role="status"></div><div class="search-results" id="search-results"></div></div><form id="edit-form"><div class="cover-editor"><div id="cover-preview">${cover(existing || {title:'나의 책',color:'forest'})}</div><div class="cover-options"><label class="file-label">표지 사진 고르기<input type="file" class="visually-hidden" id="cover-file" accept="image/jpeg,image/png,image/webp"></label><button class="quiet" type="button" id="remove-cover">사진 제거</button><div class="colors" aria-label="글자 표지 색상">${[['forest','숲'],['clay','흙'],['blue','파랑'],['sand','모래']].map(([c,l]) => `<button type="button" data-color="${c}" aria-label="${l}색 표지" aria-pressed="${selectedColor === c}"><i></i></button>`).join('')}</div><p class="hint" style="margin:7px 0 0">JPG · PNG · WebP / 사진은 기기에 저장됩니다.</p></div></div>${field('책 제목','title',existing?.title,'required maxlength="500" placeholder="어떤 책을 읽고 있나요?"')}<div class="field-row">${field('저자 · 선택','author',existing?.author,'maxlength="1000"')}${field('출판사 · 선택','publisher',existing?.publisher,'maxlength="500"')}</div>${field('ISBN · 선택','isbn',existing?.isbn,'maxlength="100"')}<p class="hint">다른 판본인지 표지와 저자를 확인해주세요. 사진 없이도 추가할 수 있어요.</p>${submit(existing ? '변경 저장' : '책장에 넣기')}</form>`, `book:${existing?.id || 'new'}`);
-  modalCleanup = () => { alive = false; controller?.abort(); };
-  const refreshCover = () => { $('#cover-preview').innerHTML = cover({title:$('#f-title').value || '나의 책',cover:selectedCover,color:selectedColor}); };
-  refreshCover();
-  $('#f-title').addEventListener('input',refreshCover);
-  document.querySelectorAll('[data-color]').forEach(btn => btn.onclick = () => { selectedColor = btn.dataset.color; modalDirty = true; document.querySelectorAll('[data-color]').forEach(b => b.setAttribute('aria-pressed',String(b === btn))); refreshCover(); });
-  $('#remove-cover').onclick = () => { selectedCover = ''; modalDirty = true; refreshCover(); };
-  $('#cover-file').onchange = async e => {
-    const file = e.target.files[0]; if (!file) return;
-    imageBusy = true; $('#edit-form [type=submit]').disabled = true;
-    try { const data = await imageData(file); if (alive) { selectedCover = data; modalDirty = true; refreshCover(); $('#form-error').textContent = ''; } }
-    catch(e) { if (alive) showError(e.message); }
-    finally { imageBusy = false; if (alive) $('#edit-form [type=submit]').disabled = false; }
-  };
-  async function search() {
-    const q = $('#book-query').value.trim(); if (!q) { $('#book-query').focus(); return; }
-    controller?.abort(); controller = new AbortController(); const token = ++requestId;
-    const timeout = setTimeout(() => controller.abort(),15000);
-    $('#search-status').textContent = '책과 표지를 찾는 중…'; $('#search-results').replaceChildren();
-    try {
-      const url = BOOK_SEARCH_ENDPOINT ? `${BOOK_SEARCH_ENDPOINT}${BOOK_SEARCH_ENDPOINT.includes('?') ? '&' : '?'}q=${encodeURIComponent(q)}` : `https://openlibrary.org/search.json?q=${encodeURIComponent(q)}&limit=8&fields=key,title,author_name,cover_i,first_publish_year`;
-      const response = await fetch(url,{signal:controller.signal});
-      if (!response.ok) throw new Error('검색 서비스에 연결하지 못했습니다. 잠시 후 다시 시도하거나 사진을 직접 골라주세요.');
-      const data = await response.json();
-      // 중계소는 {books:[...]} 또는 [...] 를, 저자는 author 또는 authors 로 줄 수 있습니다.
-      const results = BOOK_SEARCH_ENDPOINT ? (Array.isArray(data) ? data : data.books || []).map(b => ({...b,author:b.author || (Array.isArray(b.authors) ? b.authors.join(', ') : b.authors) || ''})) : (data.docs || []).map(d => ({title:d.title,author:(d.author_name || []).join(', '),publisher:'',isbn:'',cover:d.cover_i ? `https://covers.openlibrary.org/b/id/${d.cover_i}-L.jpg?default=false` : '',sourceUrl:`https://openlibrary.org${d.key}`}));
-      if (!Array.isArray(results)) throw new Error('검색 결과 형식이 올바르지 않습니다.');
-      if (!alive || token !== requestId) return;
-      $('#search-status').textContent = results.length ? `${results.length}건 · 책을 선택하면 아래에 정보가 채워집니다.` : '찾은 책이 없습니다. 아래에서 제목을 적고 사진을 골라주세요.';
-      $('#search-results').innerHTML = results.slice(0,20).map((b,i) => `<button type="button" class="search-result" data-result="${i}">${cover({title:b.title,cover:safeCover(b.cover)})}<span><b>${esc(b.title)}</b><small>${esc([b.author,b.publisher].filter(Boolean).join(' · ') || '저자 정보 없음')}</small>${b.isbn ? `<small>ISBN ${esc(b.isbn)}</small>` : ''}</span></button>`).join('');
-      $('#search-results').querySelectorAll('[data-result]').forEach(btn => btn.onclick = () => {
-        const b = results[Number(btn.dataset.result)];
-        ['title','author','publisher','isbn'].forEach(k => { $(`#f-${k}`).value = b[k] || ''; }); selectedCover = safeCover(b.cover); refreshCover(); modalDirty = true; preserveDraft();
-        $('#search-status').textContent = `“${b.title}” 선택됨 · 아래 정보를 확인하고 저장해주세요.`;
-        $('#f-title').focus();
-      });
-    } catch(e) { if (alive && token === requestId) $('#search-status').textContent = e.name === 'AbortError' ? '검색 시간이 초과되었습니다. 다시 시도하거나 사진을 직접 골라주세요.' : e.message; }
-    finally { clearTimeout(timeout); }
-  }
-  $('#search-books').onclick = search;
-  // 표지가 비어 있는 기존 책은 제목으로 한 번 자동으로 찾아줍니다.
-  if (existing && !existing.cover && existing.title.trim()) { $('#book-query').value = existing.title; search(); }
-  $('#book-query').onkeydown = e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); search(); } };
-  formHandler(async data => {
-    if (imageBusy) throw new Error('사진을 처리하는 중입니다. 잠시 기다려주세요.');
-    const values = {title:data.get('title').trim(),author:data.get('author').trim(),publisher:data.get('publisher').trim(),isbn:data.get('isbn').trim(),cover:selectedCover,color:selectedColor};
-    if (!values.title) throw new Error('책 제목을 입력해주세요.');
-    if (values.isbn && state.books.some(b => b.id !== existing?.id && b.isbn.replace(/[\s-]/g,'') === values.isbn.replace(/[\s-]/g,''))) throw new Error('같은 ISBN의 책이 이미 책장에 있습니다. 기존 책을 확인해주세요.');
-    const id = existing?.id || uid();
-    const ok = await change(s => { if (existing) Object.assign(s.books.find(b => b.id === id),values); else s.books.push({id,...values,status:'reading',createdAt:now(),finishedAt:'',entries:[],questions:[]}); });
-    if (ok) { query = ''; location.hash = `book/${id}`; }
-    return ok;
+    return change(s => { s.profile = { ...s.profile, catName, tone: data.get('tone') === 'you' ? 'you' : 'we' }; }, first ? `${catName}, 만나서 반가워.` : '고양이 설정을 저장했습니다.');
   });
 }
 
@@ -394,7 +292,7 @@ function download(content, filename) {
 function exportState(data = state, prefix = 'my-cat') { download(backup(data),`${prefix}-${new Date().toISOString().slice(0,10)}.json`); }
 function settings() {
   const s = stats(state);
-  openModal('기록 보관함',`<p class="hint">책 ${s.books}권 · 문장 ${s.entries}개 · 질문 ${s.questions}개<br>생각 ${s.thoughts}개 · 하루 ${s.days}일 · 순간 ${s.moments}개</p><p>기록은 이 기기의 브라우저에 저장됩니다.<br>휴대폰과 PC 사이에 자동으로 공유되지는 않습니다.</p><div class="storage-block"><h3>고양이</h3><p class="hint">이름과 말투, 평소 시각, 출근 요일을 고칩니다.</p><button id="cat-profile">고양이 설정</button></div><div class="storage-block"><h3>파일로 남겨두기</h3><p class="hint">직접 올린 표지 사진까지 포함해 내려받습니다. 검색으로 연결한 표지는 주소가 저장되어 인터넷 연결이 필요합니다.</p><button class="primary" id="export">전체 기록 내보내기</button></div><div class="storage-block"><h3>백업에서 가져오기</h3><p class="hint">이전 기록장의 JSON 파일도 읽을 수 있습니다. 파일을 고르면 복원할 내용을 먼저 보여드립니다.</p><label class="file-label">백업 파일 선택<input class="visually-hidden" type="file" id="import" accept=".json,application/json"></label><div id="restore-area"></div></div><div class="storage-block"><h3>직전 저장 상태</h3><p class="hint">바로 전 저장으로 돌아갑니다. 복원 시 현재 기록도 파일로 내려받습니다.</p><button id="previous">직전 상태 확인</button></div><div class="storage-block"><h3>오래 보관하기</h3><p class="hint">브라우저 데이터를 지우면 기록도 지워집니다. 중요한 기록은 파일로도 보관해주세요.</p><button id="persistent">브라우저에 보관 요청</button><p class="hint" id="persistent-status"></p></div>`);
+  openModal('기록 보관함',`<p class="hint">책 ${s.books}권 · 문장 ${s.entries}개 · 질문 ${s.questions}개<br>생각 ${s.thoughts}개 · 순간 ${s.moments}개</p><p>기록은 이 기기의 브라우저에 저장됩니다.<br>휴대폰과 PC 사이에 자동으로 공유되지는 않습니다.</p><div class="storage-block"><h3>고양이</h3><p class="hint">이름과 말투를 고칩니다.</p><button id="cat-profile">고양이 설정</button></div><div class="storage-block"><h3>파일로 남겨두기</h3><p class="hint">직접 올린 표지 사진까지 포함해 내려받습니다. 검색으로 연결한 표지는 주소가 저장되어 인터넷 연결이 필요합니다.</p><button class="primary" id="export">전체 기록 내보내기</button></div><div class="storage-block"><h3>백업에서 가져오기</h3><p class="hint">이전 기록장의 JSON 파일도 읽을 수 있습니다. 파일을 고르면 복원할 내용을 먼저 보여드립니다.</p><label class="file-label">백업 파일 선택<input class="visually-hidden" type="file" id="import" accept=".json,application/json"></label><div id="restore-area"></div></div><div class="storage-block"><h3>직전 저장 상태</h3><p class="hint">바로 전 저장으로 돌아갑니다. 복원 시 현재 기록도 파일로 내려받습니다.</p><button id="previous">직전 상태 확인</button></div><div class="storage-block"><h3>오래 보관하기</h3><p class="hint">브라우저 데이터를 지우면 기록도 지워집니다. 중요한 기록은 파일로도 보관해주세요.</p><button id="persistent">브라우저에 보관 요청</button><p class="hint" id="persistent-status"></p></div>`);
   $('#cat-profile').onclick = () => profileEditor();
   $('#export').onclick = () => exportState();
   $('#import').onchange = async e => {
@@ -418,7 +316,7 @@ function settings() {
 function previewRestore(data,label) {
   const s = stats(data);
   $('#form-error').textContent = '';
-  $('#restore-area').innerHTML = `<div class="restore-preview"><b>${label}</b><p>책 ${s.books}권 · 문장 ${s.entries}개 · 질문 ${s.questions}개<br>생각 ${s.thoughts}개 · 하루 ${s.days}일 · 순간 ${s.moments}개</p><p>현재 기록 전체를 이 내용으로 교체합니다.<br>교체 전 현재 기록은 백업 파일로 내려받습니다.</p><button id="confirm-restore" class="primary">현재 기록 백업 후 교체</button></div>`;
+  $('#restore-area').innerHTML = `<div class="restore-preview"><b>${label}</b><p>책 ${s.books}권 · 문장 ${s.entries}개 · 질문 ${s.questions}개<br>생각 ${s.thoughts}개 · 순간 ${s.moments}개</p><p>현재 기록 전체를 이 내용으로 교체합니다.<br>교체 전 현재 기록은 백업 파일로 내려받습니다.</p><button id="confirm-restore" class="primary">현재 기록 백업 후 교체</button></div>`;
   $('#confirm-restore').onclick = async e => {
     e.target.disabled = true; exportState(state,'before-restore');
     const ok = await change(s => Object.assign(s,structuredClone(data)),'기록을 복원했습니다.');
@@ -452,14 +350,7 @@ document.addEventListener('click', e => {
     case 'edit-moment': momentEditor(id); break;
     case 'cat-moment': momentEditor(undefined, btn.dataset.prompt); break;
     case 'cat-book': recordEditor('entries', book); break;
-    case 'cat-catchup': catchUp = todayKey(); renderCat(); break;
-    case 'cat-skip': setDay(todayKey(), d => { if (!d.skipped.includes(btn.dataset.slot)) d.skipped.push(btn.dataset.slot); }); break;
-    case 'cat-time': { const v = $('#cat-time').value; if (v) setDay(todayKey(), d => setField(d, btn.dataset.key, v)); break; }
-    case 'cat-answer': case 'day-set': {
-      const key = btn.dataset.key, scale = FIELDS.find(f => f.key === key).type === 'scale', value = scale ? Number(btn.dataset.value) : btn.dataset.value;
-      setDay(btn.dataset.date || todayKey(), d => setField(d, key, action === 'day-set' && getField(d, key) === value ? (scale ? 0 : '') : value));
-      break;
-    }
+    case 'cat-skip': skip(btn.dataset.slot); break;
   }
 });
 $('#settings').onclick = () => { if (ready && !busy) settings(); };

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalize, backup, matchesBook, dateLabel, dayKey, safeCover, emptyState, emptyDay, nextQuestion, dayOf, catMood, sleepMinutes } from '../src/core.js';
+import { normalize, backup, matchesBook, dateLabel, dayKey, safeCover, emptyState, nextQuestion, dayOf } from '../src/core.js';
 const old = () => ({books:[{t:'독서의 기술',s:'8/1',e:[{l:'오래 남은 문장',d:'8/2'}]}],thoughts:[{t:'생각',d:'8/3'}],trips:[{p:'통영',n:'바다'}],cur:0});
 test('legacy migration preserves every record, original dates and original input',() => {
   const input = old(), copy = structuredClone(input), s = normalize(input);
@@ -39,32 +39,19 @@ test('version 2 backups move into version 3 without losing records',() => {
   assert.deepEqual(s.moments.map(m => [m.id,m.place,m.text]),[['r','통영','바다']]);
   assert.deepEqual(normalize(JSON.parse(backup(s))),s);
 });
-test('malformed day records are rejected',() => {
-  const base = () => { const s = emptyState(); s.days.push(emptyDay('2026-09-30')); return s; };
-  let s = base(); s.days[0].commute.feel = 'nope'; assert.throws(() => normalize(s));
-  s = base(); s.days[0].wakeAt = '25:00'; assert.throws(() => normalize(s));
-  s = base(); s.days.push(emptyDay('2026-09-30')); assert.throws(() => normalize(s));
-  s = base(); s.days[0].commute.feel = 'quiet'; s.days[0].sleepSat = 4; assert.deepEqual(normalize(s),s);
+test('the cat asks for a sentence in the evening, one observation a day, then rests',() => {
+  const s = emptyState(), at = (h,m=0) => new Date(2026,8,30,h,m);
+  assert.equal(nextQuestion(s,at(9)).type,'moment');
+  assert.equal(nextQuestion(s,at(9),['prompt']),null);
+  s.books.push({...normalize({version:2,books:[{id:'b',title:'책',status:'reading',entries:[],questions:[]}],thoughts:[],trips:[]}).books[0]});
+  assert.equal(nextQuestion(s,at(9)).type,'moment');                 // 아침에는 책을 묻지 않는다
+  assert.equal(nextQuestion(s,at(20)).type,'book');
+  assert.equal(nextQuestion(s,at(20),['book']).type,'moment');
+  s.books[0].entries.push({id:'e',text:'문장',page:'',note:'',createdAt:at(19).toISOString()});
+  s.moments.push({id:'m',createdAt:at(10).toISOString(),text:'본 것',energy:'',with:'',chosen:'',place:'',from:'cat'});
+  assert.equal(nextQuestion(s,at(20)),null);
+  s.profile.tone = 'you'; assert.match(nextQuestion(s,at(20),['prompt']) === null ? '어?' : 'x',/어\?/);
 });
-test('the cat asks the current time slot first, skips what was skipped, and stops when done',() => {
-  const s = emptyState(), at = (h,m=0) => new Date(2026,8,30,h,m);   // 수요일
-  assert.equal(nextQuestion(s,at(7,30)).key,'wakeAt');
-  assert.equal(nextQuestion(s,at(9)).key,'commute.ride');
-  const d = emptyDay('2026-09-30'); s.days.push(d);
-  d.commute.ride = 'home'; d.skipped.push('morning');
-  assert.equal(nextQuestion(s,at(9)).type,'moment');          // 재택이면 출근길은 더 묻지 않는다
-  d.skipped.pop(); assert.equal(nextQuestion(s,at(9)).type,'catchup');   // 지나간 아침 칸은 먼저 물어보고
-  assert.equal(nextQuestion(s,at(9),true).key,'wakeAt');                 // 되짚기로 하면 그때 묻는다
-  d.skipped.push('catchup'); assert.equal(nextQuestion(s,at(9)).type,'moment');
-  d.skipped.push('prompt'); assert.equal(nextQuestion(s,at(9)),null);
-  assert.equal(nextQuestion(s,at(18)).key,'work.grain');
-  s.profile.tone = 'you'; assert.match(nextQuestion(s,at(18)).text,/어\?$/);
-  s.profile.workdays = []; assert.equal(nextQuestion(s,at(18)).key,'rest.place');
-});
-test('late night belongs to the previous day; mood and sleep follow the record',() => {
+test('late night belongs to the previous day',() => {
   assert.equal(dayOf(new Date(2026,8,30,2,0)),'2026-09-29'); assert.equal(dayOf(new Date(2026,8,30,5,0)),'2026-09-30');
-  const a = emptyDay('2026-09-29'), b = emptyDay('2026-09-30');
-  a.bedAt = '23:30'; b.wakeAt = '07:00'; assert.equal(sleepMinutes(a,b),450);
-  a.bedAt = '01:00'; assert.equal(sleepMinutes(a,b),360);
-  b.sleepSat = 1; assert.equal(catMood(b),'sleepy'); b.daySat = 5; assert.equal(catMood(b),'happy');
 });

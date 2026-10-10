@@ -137,29 +137,15 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;bac
 .chips{display:flex;flex-wrap:wrap;gap:7px}
 .chip,.chip-radio span{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:8px 15px;border:1px solid var(--line);border-radius:999px;background:var(--paper);font-size:14px;color:var(--ink);cursor:pointer}
 .chip[aria-pressed=true],.chip-radio input:checked+span{background:var(--green);border-color:var(--green);color:#fff}
-.chips.scale .chip{flex:1 1 0;padding:8px 0}
-.scale-ends{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin:6px 2px 0}
 .chip-radio{margin:0;font-size:inherit}
 .chip-radio input{position:absolute;opacity:0;width:1px;height:1px}
 .chip-radio input:focus-visible+span{outline:2px solid var(--green);outline-offset:3px}
 fieldset.pick{border:0;padding:0;min-width:0}
 fieldset.pick legend{font-size:13px;color:var(--muted);margin-bottom:6px;padding:0}
-.time-row{display:flex;gap:8px;margin-bottom:6px}
-.time-row input{flex:1}
 .cat-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:16px}
 .text-link{color:var(--green);border-bottom:1px solid #b9c7b4;padding-bottom:1px;white-space:nowrap}
 .prompt{font:700 18px/1.6 var(--serif);margin-bottom:16px;word-break:keep-all}
 .tags{margin:0 0 6px}
 
-/* ── 하루 ────────────────────────────────────────────────── */
-.day-nav{display:flex;align-items:center;justify-content:space-between;gap:10px;text-align:center}
-.day-nav>a,.day-nav>span{display:grid;place-items:center;width:44px;height:44px;font-size:28px;color:var(--green)}
-.day-nav h1{font-size:26px;margin:0}
-.day-nav .eyebrow{margin-bottom:6px}
-.day-hint{text-align:center;margin:8px 0 20px}
-.slot{border-top:1px solid var(--line);padding:18px 0 4px}
-.slot h2{font-size:19px;margin-bottom:12px}
-.slot-field{margin-bottom:16px}
-.slot-label{display:block;font-size:12.5px;color:var(--muted);margin:0 0 7px}
-.slot+.summary-line{margin-top:14px}
+
 .chip-radio span{margin-left:0}
