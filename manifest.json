@@ -3,8 +3,8 @@
   "short_name": "나만의 슬라임",
   "start_url": "./index.html",
   "display": "standalone",
-  "background_color": "#F6F2E8",
-  "theme_color": "#F6F2E8",
+  "background_color": "#FFF6EA",
+  "theme_color": "#FFF6EA",
   "icons": [
     {
       "src": "icon.svg",
