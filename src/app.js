@@ -3,7 +3,7 @@ import { mountSlime } from './slime.js';
 import { openStore, load, commit, previous } from './storage.js';
 import { BOOK_SEARCH_ENDPOINT, AI_ENDPOINT, AI_REFLECT_ENDPOINT, AI_CHAT_ENDPOINT } from './config.js';
 
-const BUILD = '1012b';   // 폰에서 어떤 판을 보고 있는지 확인용
+const BUILD = '1012c';   // 폰에서 어떤 판을 보고 있는지 확인용
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 let state = emptyState(), db, revision = 0, busy = false, ready = false;
@@ -52,6 +52,10 @@ function render() {
   const tab = { book:'shelf', questions:'shelf', shelf:'shelf', thoughts:'thoughts', me:'me', answers:'me', talk:'me' }[page] || 'home';
   document.querySelectorAll('[data-nav]').forEach(a => { if (a.dataset.nav === tab) a.setAttribute('aria-current','page'); else a.removeAttribute('aria-current'); });
   document.body.dataset.page = page;
+  const desk = page === 'talk' && !!route().id;
+  document.body.classList.toggle('pc', desk && pcMode());
+  document.body.classList.toggle('desk-on', desk && (pcMode() || matchMedia('(min-width: 760px)').matches));
+  if (!desk) { ctxOpen = false; document.body.classList.remove('ctx-open'); }
   if (page === 'book') renderBook();
   else if (page === 'questions') renderQuestions();
   else if (page === 'thoughts') renderThoughts();
@@ -487,11 +491,14 @@ function talkListHtml(currentId) {
   return list.length ? list.map(c => { const last = c.messages[c.messages.length - 1]; return `<a class="talk-item ${c.id === currentId ? 'on' : ''}" href="#talk/${esc(c.id)}" ${c.id === currentId ? 'aria-current="page"' : ''}><span class="status-tag">${talkKind[c.topic.kind]}</span><b>${esc(talkName(c))}</b><small>${esc(last ? last.text.slice(0, 60) : '아직 아무 말도 안 했어요')}</small><small>${esc(dateLabel(c.createdAt))} · ${c.messages.length}마디</small></a>`; }).join('')
     : empty('아직 나눈 이야기가 없어요', '책·문장·질문·생각에서 "이야기하기"를 누르거나, 새 이야기로 시작해 보세요.');
 }
-// 노트북 키보드로 칠 때 Enter로 보낼지 — 이 기기에만 기억합니다. 정하지 않았으면 넓은 화면·마우스일 때 켬
-function enterSendsPref() {
-  try { const v = localStorage.getItem('enter-sends'); if (v === '1' || v === '0') return v === '1'; } catch {}
-  return matchMedia('(min-width: 760px), (pointer: fine)').matches;
+// PC 모드 — 폰을 노트북에 연결해 이야기할 때. 이 기기에만 기억합니다. (예전 'Enter로 보내기'를 켜 두었으면 켠 것으로)
+function pcMode() {
+  try { const v = localStorage.getItem('pc-mode'); if (v === '1' || v === '0') return v === '1'; return localStorage.getItem('enter-sends') === '1'; } catch { return false; }
 }
+function setPcMode(on) { try { localStorage.setItem('pc-mode', on ? '1' : '0'); localStorage.removeItem('enter-sends'); } catch {} }
+// PC 모드면 Enter로 보냄. 아니면 넓은 화면·마우스일 때만
+const enterSendsPref = () => pcMode() || matchMedia('(min-width: 760px), (pointer: fine)').matches;
+let ctxOpen = false;
 function renderTalks() {
   const name = state.profile.catName || '슬라임';
   $('#main').innerHTML = `<div class="narrow"><a class="back" href="#me">← 나</a><div class="intro"><div><h1>${esc(name)}과 나눈 이야기</h1><p>책·문장·질문·생각을 하나 골라 같이 들여다봅니다.</p></div><button class="primary intro-actions" data-action="talk-free">＋ 새 이야기</button></div><div class="talk-list">${talkListHtml('')}</div></div>`;
@@ -530,11 +537,12 @@ function renderTalk(id) {
   const draft = $('#talk-input')?.value || '';
   const face = miniSlime(slimeLook().color);
   const bubbleHtml = (role, text) => role === 'assistant' ? `<div class="talk-msg slime">${face}<p>${esc(text)}</p></div>` : `<div class="talk-msg me"><p>${esc(text)}</p></div>`;
-  const pending = talkPending === id, on = !!state.profile.aiConsentAt, wide = matchMedia('(min-width: 760px)').matches, enterSends = enterSendsPref();
-  $('#main').innerHTML = `<div class="talk-desk">
+  const pending = talkPending === id, on = !!state.profile.aiConsentAt, pc = pcMode(), wide = pc || matchMedia('(min-width: 760px)').matches, enterSends = enterSendsPref();
+  document.body.classList.toggle('pc', pc); document.body.classList.toggle('desk-on', wide); document.body.classList.toggle('ctx-open', ctxOpen);
+  $('#main').innerHTML = `<div class="talk-desk ${wide ? 'desk' : ''}">
     <aside class="talk-side" aria-label="이야기 목록"><div class="talk-side-head"><a class="back" href="#me">← 나</a><button class="primary" data-action="talk-free">＋ 새 이야기</button></div><div class="talk-list">${talkListHtml(id)}</div></aside>
     <section class="talk" aria-label="이야기">
-      <div class="talk-head"><a class="back talk-back" href="#talk">← 이야기</a><h1 class="talk-title"><span class="status-tag">${talkKind[c.topic.kind]}</span>${esc(c.topic.kind === 'free' ? `${name}과 이야기` : talkName(c))}</h1>${c.messages.some(m => m.role === 'user') ? '<button class="quiet" data-action="talk-keep">생각으로 남기기</button>' : ''}</div>
+      <div class="talk-head"><a class="back talk-back" href="#talk">← 이야기</a><h1 class="talk-title"><span class="status-tag">${talkKind[c.topic.kind]}</span>${esc(c.topic.kind === 'free' ? `${name}과 이야기` : talkName(c))}</h1><div class="talk-tools">${c.messages.some(m => m.role === 'user') ? '<button class="quiet" data-action="talk-keep">생각으로 남기기</button>' : ''}<button class="tool ctx-toggle" data-action="talk-ctx" aria-pressed="${ctxOpen}" aria-label="이야기의 배경 보기" title="배경 보기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h11l3 3v13H5z M9 10h7 M9 14h7" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></button><button class="tool" data-action="pc-mode" aria-pressed="${pc}" aria-label="PC 모드 ${pc ? '끄기' : '켜기'}" title="PC 모드"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14v9H5z M3 18h18" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg><span>PC</span></button></div></div>
       <div class="talk-log" id="talk-log">
         ${bubbleHtml('assistant', talkOpener(c))}
         ${c.messages.map(m => bubbleHtml(m.role, m.text)).join('')}
@@ -544,7 +552,7 @@ function renderTalk(id) {
       ${on ? `<form class="talk-form" id="talk-form"><label class="visually-hidden" for="talk-input">${esc(name)}에게 할 말</label><textarea id="talk-input" rows="1" maxlength="1500" placeholder="${esc(name)}에게 말하기${enterSends ? ' · Enter 보내기, Shift+Enter 줄바꿈' : ''}">${esc(draft)}</textarea><button class="primary" type="submit" ${pending ? 'disabled' : ''} aria-label="보내기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12l15-7-5 15-2.5-6.5z" fill="currentColor"/></svg></button></form>`
          : `<div class="talk-form off"><p>이야기하려면 '나'에서 <b>슬라임이 기록 읽기</b>를 켜 주세요.</p><a class="text-link" href="#me">켜러 가기 ›</a></div>`}
     </section>
-    <aside class="talk-ctx" aria-label="이야기의 배경">${talkContextHtml(c)}</aside>
+    <aside class="talk-ctx" aria-label="이야기의 배경"><button class="quiet ctx-close" data-action="talk-ctx">닫기 ✕</button>${talkContextHtml(c)}</aside>
   </div>`;
   const log = $('#talk-log'); if (log) { log.scrollTop = log.scrollHeight; log.lastElementChild?.scrollIntoView({ block: 'end' }); }
   const input = $('#talk-input');
@@ -552,7 +560,7 @@ function renderTalk(id) {
     const grow = () => { input.style.height = 'auto'; input.style.height = Math.min(wide ? 220 : 140, input.scrollHeight) + 'px'; };
     input.oninput = grow; grow();
     // PC: Enter로 보내고 Shift+Enter로 줄바꿈. 폰: 보내기 단추 (Ctrl+Enter도 됨)
-    input.onkeydown = e => { if (e.key === 'Enter' && !e.isComposing && ((enterSends && !e.shiftKey) || e.ctrlKey || e.metaKey)) { e.preventDefault(); $('#talk-form').requestSubmit(); } };
+    input.onkeydown = e => { if (e.key === 'Escape' && ctxOpen) { ctxOpen = false; renderTalk(id); return; } if (e.key === 'Enter' && !e.isComposing && ((enterSends && !e.shiftKey) || e.ctrlKey || e.metaKey)) { e.preventDefault(); $('#talk-form').requestSubmit(); } };
     $('#talk-form').onsubmit = e => { e.preventDefault(); const t = input.value.trim(); if (t) sendTalk(id, t); };
     if (wide && !pending) input.focus({ preventScroll: true });
   }
@@ -625,7 +633,7 @@ function renderMe() {
       <p class="hint">켜면 내가 쓴 <b>생각, 슬라임에게 한 답, 책 문장에 단 내 생각</b>을 AI(Anthropic Claude)에게 보내 주제어를 붙이고, 하루 한 번 '그땐 / 지금은' 말과 오늘의 질문을 만듭니다. 책에서 옮겨 적은 문장은 보내지 않습니다. 중계소는 글을 저장하지 않고, 결과는 이 기기에만 남습니다.</p>
       <div class="me-toggle"><button id="ai-toggle" class="${p.aiConsentAt ? '' : 'primary'}">${p.aiConsentAt ? '끄기' : '켜기'}</button><p class="hint" id="ai-status">${aiStatus()}</p></div>
     </section>
-    <section class="me-card"><h2>키보드</h2><p class="hint">폰을 노트북에 연결해 키보드로 이야기할 때 켜 두세요. 켜면 Enter로 보내고 Shift+Enter로 줄을 바꿉니다. 이 기기에만 적용됩니다.</p><div class="me-toggle"><button id="enter-toggle" class="${enterSendsPref() ? '' : 'primary'}">${enterSendsPref() ? 'Enter로 보내기 끄기' : 'Enter로 보내기 켜기'}</button></div></section>
+    <section class="me-card"><h2>PC 모드</h2><p class="hint">폰을 노트북에 연결해 이야기할 때 켜 두세요. 이야기 화면이 아래 탭 없이 화면 높이를 다 쓰고, 글씨가 조금 커지고, <b>Enter로 보내고 Shift+Enter로 줄을 바꿉니다.</b> 이야기 화면 오른쪽 위 <b>PC</b> 단추로도 켜고 끌 수 있습니다. 이 기기에만 적용됩니다.</p><div class="me-toggle"><button id="pc-toggle" class="${pcMode() ? '' : 'primary'}">${pcMode() ? 'PC 모드 끄기' : 'PC 모드 켜기'}</button></div></section>
     <section class="me-card"><h2>AI 사용량</h2>${usageBlock()}</section>
     <section class="me-card"><h2>보관</h2>
       <p class="hint">기록은 이 폰의 브라우저에만 있습니다. 가끔 파일로 내려받아 두세요.</p>
@@ -633,7 +641,7 @@ function renderMe() {
     </section>
     <p class="me-foot">본 대로, 거짓 없이 · <span id="me-build">${esc($('#save-status').textContent)}</span></p>
   </div>`;
-  $('#enter-toggle').onclick = () => { try { localStorage.setItem('enter-sends', enterSendsPref() ? '0' : '1'); } catch {} renderMe(); notice(enterSendsPref() ? '이제 Enter로 보냅니다.' : '이제 Enter는 줄바꿈입니다.'); };
+  $('#pc-toggle').onclick = () => { setPcMode(!pcMode()); renderMe(); notice(pcMode() ? 'PC 모드를 켰습니다. 이야기 화면을 넓게 쓰고 Enter로 보냅니다.' : 'PC 모드를 껐습니다.'); };
   $('#open-backup').onclick = () => { if (ready && !busy) settings(); };
   $('#ai-toggle').onclick = async () => {
     const on = !state.profile.aiConsentAt;
@@ -700,8 +708,10 @@ document.addEventListener('click', e => {
     case 'talk-thought': startTalk('thought', id); break;
     case 'talk-entry': startTalk('entry', id, book); break;
     case 'talk-question': startTalk('question', id, book); break;
-    case 'talk-quote': { const el = $('#talk-input'); if (el) { el.value = (el.value ? el.value.replace(/\s*$/, '\n') : '') + `“${btn.dataset.text}” `; el.dispatchEvent(new Event('input')); el.focus(); } break; }
+    case 'talk-quote': { if (ctxOpen) { ctxOpen = false; document.body.classList.remove('ctx-open'); $('[data-action=talk-ctx]')?.setAttribute('aria-pressed', 'false'); } const el = $('#talk-input'); if (el) { el.value = (el.value ? el.value.replace(/\s*$/, '\n') : '') + `“${btn.dataset.text}” `; el.dispatchEvent(new Event('input')); el.focus(); } break; }
     case 'talk-keep': talkKeep(route().id); break;
+    case 'talk-ctx': ctxOpen = !ctxOpen; renderTalk(route().id); break;
+    case 'pc-mode': { setPcMode(!pcMode()); ctxOpen = false; render(); notice(pcMode() ? 'PC 모드: 화면을 넓게 쓰고 Enter로 보냅니다.' : 'PC 모드를 껐습니다.'); break; }
     case 'talk-retry': { const c = state.chats.find(x => x.id === route().id); if (c?.messages.at(-1)?.role === 'user') sendTalk(c.id, ''); break; }
     case 'usage-reset': change(s => { s.usage = emptyUsage(); }, 'AI 사용량을 0부터 다시 셉니다.'); break;
     case 'cat-answer': answerEditor(btn.dataset.prompt); break;
@@ -712,6 +722,8 @@ document.addEventListener('click', e => {
   if (btn.id === 'ask-fab') { askOpen = !askOpen; syncAsk(); }
 });
 window.addEventListener('hashchange',() => { if (dialog.open) closeModal(); render(); window.scrollTo(0,0); });
+let resizeTimer = 0;
+window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { if (route().page === 'talk' && route().id && !dialog.open) { const d = $('#talk-input')?.value; render(); if (d && $('#talk-input')) { $('#talk-input').value = d; $('#talk-input').dispatchEvent(new Event('input')); } } }, 250); });
 window.addEventListener('beforeunload',e => { if (busy) { e.preventDefault(); e.returnValue = ''; } });
 channel && (channel.onmessage = async e => {
   if (e.data <= revision) return;

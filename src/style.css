@@ -414,42 +414,65 @@ body[data-page=talk] #toast{bottom:calc(170px + env(safe-area-inset-bottom))}
 .ctx-usage{margin-top:18px;font-size:12px;color:var(--muted)}
 .talk-item.on{border-color:var(--mint-deep);background:var(--mint-pale);box-shadow:var(--pop) var(--mint-line)}
 
-@media (min-width:760px){
-  body[data-page=talk] .shell{max-width:1360px}
-  body[data-page=talk] main{padding-bottom:0}
-  .talk-desk{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:18px;height:calc(100dvh - 150px - env(safe-area-inset-bottom));min-height:260px}
-  .talk-ctx{display:flex;flex-direction:column;min-height:0;overflow:auto;padding-right:4px}
-  .talk-side-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px}
-  .talk-side-head .back{margin:0}
-  .talk-side-head button{min-height:40px;padding:6px 14px;font-size:13px}
-  .talk-side .talk-item{padding:11px 13px;box-shadow:0 3px 0 var(--line)}
-  .talk-side .talk-item b{font-size:15px}
-  .talk-ctx{background:var(--peach);border-radius:var(--r);padding:16px}
-  .talk{display:flex;flex-direction:column;min-height:0;padding-bottom:0;background:var(--surface);border:3px solid var(--line);border-radius:var(--r);box-shadow:var(--pop) var(--line);overflow:hidden}
-  .talk-head{padding:12px 18px 8px;border-bottom:3px dotted var(--line);gap:10px}
+/* 책상 모양: 넓은 화면이거나 PC 모드일 때 — 대화는 한 판 안에서 스크롤되고 입력칸은 판 아래에 붙음 */
+body.desk-on .shell{max-width:1360px}
+body.desk-on main{padding-bottom:0}
+.desk{display:grid;grid-template-columns:minmax(0,1fr);gap:18px;height:calc(100dvh - 150px - env(safe-area-inset-bottom));min-height:260px}
+.desk .talk-side-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px}
+.desk .talk-side-head .back{margin:0}
+.desk .talk-side-head button{min-height:40px;padding:6px 14px;font-size:13px}
+.desk .talk-side .talk-item{padding:11px 13px;box-shadow:0 3px 0 var(--line)}
+.desk .talk-side .talk-item b{font-size:15px}
+.talk-ctx{background:var(--peach);border-radius:var(--r);padding:16px;flex-direction:column;min-height:0;overflow:auto}
+.desk .talk{display:flex;flex-direction:column;min-height:0;padding-bottom:0;background:var(--surface);border:3px solid var(--line);border-radius:var(--r);box-shadow:var(--pop) var(--line);overflow:hidden}
+.desk .talk-head{padding:12px 18px 8px;border-bottom:3px dotted var(--line);gap:10px}
+.desk .talk-title{font-size:19px;margin:0;flex:1;min-width:0}
+.desk .talk-log{flex:1;min-height:0;overflow:auto;padding:18px 20px;background:var(--bg)}
+.desk .talk-msg{max-width:78%}
+.desk .talk-msg p{font-size:15.5px}
+.desk .talk-form,.desk .talk-form.off{position:static;transform:none;width:auto;margin:0;border:0;border-top:3px solid var(--line);border-radius:0;box-shadow:none;padding:10px 12px}
+.desk .talk-form textarea{font-size:15.5px}
+body.desk-on #usage-pill,body.desk-on #toast{bottom:calc(96px + env(safe-area-inset-bottom))}
 
-  .talk-title{font-size:19px;margin:0;flex:1;min-width:0}
-  .talk-log{flex:1;min-height:0;overflow:auto;padding:18px 20px;background:var(--bg)}
-  .talk-msg{max-width:78%}
-  .talk-msg p{font-size:15.5px}
-  .talk-form,.talk-form.off{position:static;transform:none;width:auto;margin:0;border:0;border-top:3px solid var(--line);border-radius:0;box-shadow:none;padding:10px 12px}
-  .talk-form textarea{font-size:15.5px}
-  body[data-page=talk] #usage-pill{bottom:calc(96px + env(safe-area-inset-bottom))}
-  body[data-page=talk] #toast{bottom:calc(96px + env(safe-area-inset-bottom))}
+/* 머리줄 단추: 배경 보기 · PC 모드 */
+.talk-head{gap:8px}
+.talk-tools{display:flex;align-items:center;gap:6px;flex:0 0 auto}
+.talk-tools .tool{min-height:38px;min-width:38px;padding:0 9px;display:inline-flex;align-items:center;gap:4px;border-radius:12px;box-shadow:0 3px 0 var(--line);font:400 12.5px var(--head)}
+.talk-tools .tool svg{width:19px;height:19px}
+.talk-tools .tool[aria-pressed=true]{background:var(--mint);border-color:var(--mint-deep);color:#1f3d27;box-shadow:0 3px 0 var(--mint-deep)}
+.ctx-close{display:none}
+
+/* 좁은 화면: 배경 칸은 단추로 위에 덮어 엶 */
+@media (max-width:759px){
+  body.ctx-open .talk-ctx{display:flex;position:fixed;z-index:8;left:12px;right:12px;top:calc(12px + env(safe-area-inset-top));bottom:calc(12px + env(safe-area-inset-bottom));border:3px solid var(--line);box-shadow:0 8px 0 var(--line),0 20px 50px rgba(74,60,49,.25)}
+  body.ctx-open .ctx-close{display:block;align-self:flex-end;min-height:36px;margin-bottom:4px}
+  .talk-head{align-items:flex-start}
+}
+@media (min-width:760px){
+  .desk{grid-template-columns:minmax(0,1fr) 280px}
+  .desk .talk-ctx{display:flex}
+  .ctx-toggle{display:none!important}
 }
 
 /* 넓은 창(DeX·노트북)에서는 목록까지 세 칸 */
 @media (min-width:1100px){
-  .talk-desk{grid-template-columns:270px minmax(0,1fr) 320px;gap:22px}
-  .talk-side{display:flex;flex-direction:column;min-height:0;overflow:auto;padding-right:4px}
-  .talk-back{display:none!important}
+  .desk{grid-template-columns:270px minmax(0,1fr) 320px;gap:22px}
+  .desk .talk-side{display:flex;flex-direction:column;min-height:0;overflow:auto;padding-right:4px}
+  .desk .talk-back{display:none!important}
 }
 
-/* 가로로 눕힌 폰처럼 낮은 화면: 이야기 중에는 아래 탭을 숨기고 높이를 다 씀 (← 이야기로 돌아감) */
+/* PC 모드, 또는 가로로 눕힌 낮은 화면: 아래 탭을 숨기고 높이를 다 씀 (← 이야기 / ← 나 로 나감) */
+body.pc .navigation{display:none}
+body.pc .shell{padding-top:calc(8px + env(safe-area-inset-top));padding-bottom:calc(8px + env(safe-area-inset-bottom))}
+body.pc main{padding-top:0}
+body.pc .desk{height:calc(100dvh - 20px - env(safe-area-inset-top) - env(safe-area-inset-bottom))}
+body.pc #usage-pill,body.pc #toast{bottom:calc(70px + env(safe-area-inset-bottom))}
+body.pc .desk .talk-msg p,body.pc .desk .talk-form textarea{font-size:16.5px}
+body.pc .desk .talk-log{padding:20px 24px}
 @media (min-width:760px) and (max-height:560px){
-  body[data-page=talk] .navigation{display:none}
-  body[data-page=talk] .shell{padding-top:calc(8px + env(safe-area-inset-top));padding-bottom:calc(8px + env(safe-area-inset-bottom))}
-  body[data-page=talk] main{padding-top:0}
-  .talk-desk{height:calc(100dvh - 20px - env(safe-area-inset-top) - env(safe-area-inset-bottom))}
-  body[data-page=talk] #usage-pill,body[data-page=talk] #toast{bottom:calc(70px + env(safe-area-inset-bottom))}
+  body.desk-on .navigation{display:none}
+  body.desk-on .shell{padding-top:calc(8px + env(safe-area-inset-top));padding-bottom:calc(8px + env(safe-area-inset-bottom))}
+  body.desk-on main{padding-top:0}
+  .desk{height:calc(100dvh - 20px - env(safe-area-inset-top) - env(safe-area-inset-bottom))}
+  body.desk-on #usage-pill,body.desk-on #toast{bottom:calc(70px + env(safe-area-inset-bottom))}
 }
