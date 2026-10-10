@@ -88,3 +88,11 @@ test('talk results stay with their record: added lines, earlier answers and the 
   assert.ok(matchesBook(s.books[0], '덧붙임') && matchesBook(s.books[0], '저랬다'));
   assert.throws(() => normalize({ version: 3, books: [], thoughts: [{ id: 't', text: 'a', more: [{ id: 't', text: 'b' }] }], moments: [] }), /ID/);
 });
+
+test('answers to the slime keep added lines, and a talk can start from an answer', () => {
+  const s = normalize({ version: 3, profile: { catName: '', tone: 'we', aiConsentAt: '' }, books: [], thoughts: [], moments: [], answers: [{ id: 'a', prompt: '오늘은?', text: '좋았다', more: [{ id: 'm', text: '이야기해 보니 사실 피곤했다' }] }],
+    chats: [{ id: 'c', topic: { kind: 'answer', ref: 'a', title: '오늘은?' }, messages: [] }] });
+  assert.equal(s.answers[0].more[0].text, '이야기해 보니 사실 피곤했다');
+  assert.equal(s.chats[0].topic.kind, 'answer');
+  assert.deepEqual(normalize(JSON.parse(backup(s))), s);
+});

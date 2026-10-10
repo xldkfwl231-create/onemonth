@@ -497,3 +497,14 @@ details.then small{display:block;font-size:11px}
 .check input{width:20px;height:20px;min-height:0;accent-color:var(--mint-deep)}
 .flash{animation:flash 1.8s ease-out}
 @keyframes flash{0%,35%{background:var(--mint-pale)}100%{background:transparent}}
+
+/* ── 이야기 탭: 갈래 단추, 슬라임의 물음 카드 ── */
+.filters button small{font-size:11.5px;opacity:.7;margin-left:2px}
+.talk-item small.from{color:var(--mint-deep)}
+.ask-item{gap:4px}
+.ask-item .asked{margin:2px 0 0;font:400 14px/1.5 var(--head);color:var(--sky-ink);overflow-wrap:anywhere}
+.ask-item .ask-text{margin:0;font:400 16px/1.7 var(--body);white-space:pre-wrap;overflow-wrap:anywhere}
+.ask-item .q-actions{margin:2px -6px -6px 0}
+.ctx-focus.ask small{display:block;color:var(--sky-ink);font:400 13px/1.5 var(--head);margin-bottom:4px}
+.navigation,body[data-page=home] .navigation{width:min(calc(100% - 20px),500px)}
+.navigation a,body[data-page=home] .navigation a{font-size:12px}

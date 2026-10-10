@@ -64,7 +64,7 @@ export function normalize(input) {
   let profile = emptyProfile();
   if (v3) { const q = row(p.profile); profile = { catName: text(q.catName, '고양이 이름', 30, true), tone: q.tone === 'you' ? 'you' : 'we', aiConsentAt: text(q.aiConsentAt, '동의 시각', 100, true) }; }
   // 슬라임의 질문에 한 답 — 생각(스스로 떠오른 것)과는 다른 갈래
-  const answers = !v3 ? [] : list(p.answers, '답', true).map(a => { row(a); return { id: id(a.id), createdAt: text(a.createdAt, '날짜', 100, true), prompt: text(a.prompt, '질문', 500, true), text: text(a.text, '답') }; });
+  const answers = !v3 ? [] : list(p.answers, '답', true).map(a => { row(a); return { id: id(a.id), createdAt: text(a.createdAt, '날짜', 100, true), prompt: text(a.prompt, '질문', 500, true), text: text(a.text, '답'), more: more(a.more) }; });
   const readings = v3 && object(p.readings) ? structuredClone(p.readings) : {};
   // 슬라임의 하루 말 — AI가 만든 '그땐/지금은' 몇 줄과 오늘의 질문. 형식이 어긋나면 버립니다(다시 만들면 됨).
   const ins = v3 && object(p.insights) ? p.insights : null;
@@ -76,7 +76,7 @@ export function normalize(input) {
   const chats = !v3 ? [] : list(p.chats, '이야기', true).map(c => {
     row(c); const t = object(c.topic) ? c.topic : {};
     return { id: id(c.id), createdAt: text(c.createdAt, '날짜', 100, true),
-      topic: { kind: ['book', 'entry', 'question', 'thought', 'free'].includes(t.kind) ? t.kind : 'free', ref: text(t.ref, '주제', 100, true), book: text(t.book, '주제', 100, true), title: text(t.title, '주제', 500, true) },
+      topic: { kind: ['book', 'entry', 'question', 'thought', 'answer', 'free'].includes(t.kind) ? t.kind : 'free', ref: text(t.ref, '주제', 100, true), book: text(t.book, '주제', 100, true), title: text(t.title, '주제', 500, true) },
       usage: { input: object(c.usage) && Number.isFinite(c.usage.input) && c.usage.input >= 0 ? Math.round(c.usage.input) : 0, output: object(c.usage) && Number.isFinite(c.usage.output) && c.usage.output >= 0 ? Math.round(c.usage.output) : 0 },
       messages: list(c.messages, '대화', true).slice(-500).map(m => { row(m); if (!['user', 'assistant'].includes(m.role)) throw new Error('대화 형식이 올바르지 않습니다.'); return { role: m.role, text: text(m.text, '대화', 5000), at: text(m.at, '날짜', 100, true) }; }) };
   });
