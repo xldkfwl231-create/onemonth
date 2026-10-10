@@ -414,11 +414,11 @@ body[data-page=talk] #toast{bottom:calc(170px + env(safe-area-inset-bottom))}
 .ctx-usage{margin-top:18px;font-size:12px;color:var(--muted)}
 .talk-item.on{border-color:var(--mint-deep);background:var(--mint-pale);box-shadow:var(--pop) var(--mint-line)}
 
-@media (min-width:1000px){
+@media (min-width:760px){
   body[data-page=talk] .shell{max-width:1360px}
   body[data-page=talk] main{padding-bottom:0}
-  .talk-desk{display:grid;grid-template-columns:270px minmax(0,1fr) 320px;gap:22px;height:calc(100dvh - 150px - env(safe-area-inset-bottom));min-height:480px}
-  .talk-side,.talk-ctx{display:flex;flex-direction:column;min-height:0;overflow:auto;padding-right:4px}
+  .talk-desk{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:18px;height:calc(100dvh - 150px - env(safe-area-inset-bottom));min-height:260px}
+  .talk-ctx{display:flex;flex-direction:column;min-height:0;overflow:auto;padding-right:4px}
   .talk-side-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px}
   .talk-side-head .back{margin:0}
   .talk-side-head button{min-height:40px;padding:6px 14px;font-size:13px}
@@ -427,7 +427,7 @@ body[data-page=talk] #toast{bottom:calc(170px + env(safe-area-inset-bottom))}
   .talk-ctx{background:var(--peach);border-radius:var(--r);padding:16px}
   .talk{display:flex;flex-direction:column;min-height:0;padding-bottom:0;background:var(--surface);border:3px solid var(--line);border-radius:var(--r);box-shadow:var(--pop) var(--line);overflow:hidden}
   .talk-head{padding:12px 18px 8px;border-bottom:3px dotted var(--line);gap:10px}
-  .talk-back{display:none!important}
+
   .talk-title{font-size:19px;margin:0;flex:1;min-width:0}
   .talk-log{flex:1;min-height:0;overflow:auto;padding:18px 20px;background:var(--bg)}
   .talk-msg{max-width:78%}
@@ -436,4 +436,20 @@ body[data-page=talk] #toast{bottom:calc(170px + env(safe-area-inset-bottom))}
   .talk-form textarea{font-size:15.5px}
   body[data-page=talk] #usage-pill{bottom:calc(96px + env(safe-area-inset-bottom))}
   body[data-page=talk] #toast{bottom:calc(96px + env(safe-area-inset-bottom))}
+}
+
+/* 넓은 창(DeX·노트북)에서는 목록까지 세 칸 */
+@media (min-width:1100px){
+  .talk-desk{grid-template-columns:270px minmax(0,1fr) 320px;gap:22px}
+  .talk-side{display:flex;flex-direction:column;min-height:0;overflow:auto;padding-right:4px}
+  .talk-back{display:none!important}
+}
+
+/* 가로로 눕힌 폰처럼 낮은 화면: 이야기 중에는 아래 탭을 숨기고 높이를 다 씀 (← 이야기로 돌아감) */
+@media (min-width:760px) and (max-height:560px){
+  body[data-page=talk] .navigation{display:none}
+  body[data-page=talk] .shell{padding-top:calc(8px + env(safe-area-inset-top));padding-bottom:calc(8px + env(safe-area-inset-bottom))}
+  body[data-page=talk] main{padding-top:0}
+  .talk-desk{height:calc(100dvh - 20px - env(safe-area-inset-top) - env(safe-area-inset-bottom))}
+  body[data-page=talk] #usage-pill,body[data-page=talk] #toast{bottom:calc(70px + env(safe-area-inset-bottom))}
 }
