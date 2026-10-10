@@ -132,6 +132,6 @@ export function nextQuestion(state, now = new Date(), skipped = []) {
   // 오늘 슬라임이 기록을 읽고 만든 질문이 있으면 그걸, 없으면 미리 써 둔 질문을
   const custom = state.insights?.date === date && state.insights.question;
   if (!skipped.includes('prompt') && !state.answers.some(a => today(a.createdAt)))
-    return { slot: 'prompt', title: '오늘의 질문', type: 'moment', text: custom || PROMPTS[Number(date.replaceAll('-', '')) % PROMPTS.length][tone] };
+    return { slot: 'prompt', title: '오늘의 물음', type: 'moment', text: custom || PROMPTS[Number(date.replaceAll('-', '')) % PROMPTS.length][tone] };
   return null;
 }

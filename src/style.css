@@ -188,20 +188,6 @@ body.night .ask-fab{background:#3b3550;border-color:#5a5275;box-shadow:0 5px 0 #
 .book-sub.small{margin-top:3px;font-size:12px;opacity:.85}
 .book-hero .actions{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;justify-content:center}
 .actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-.kind-cards{display:flex;gap:14px;margin-bottom:18px}
-.kind{flex:1 1 0;display:flex;flex-direction:column;align-items:center;gap:4px;border-radius:var(--r);padding:14px 10px 12px;min-height:0;border:3px solid transparent;box-shadow:none;font-family:var(--body)}
-.kind.entries{background:var(--mint-pale);border-color:var(--mint-line);box-shadow:var(--pop) var(--mint-line)}
-.kind.questions{background:var(--sky);border-color:#c5d8ea;box-shadow:var(--pop) #c5d8ea}
-.kind[aria-pressed=true]{outline:3px solid var(--mint-deep);outline-offset:3px}
-.kind.questions[aria-pressed=true]{outline-color:var(--sky-ink)}
-.kind-mark{font:400 22px/1 var(--head);color:var(--mint-deep)}
-.kind.questions .kind-mark{color:var(--sky-ink)}
-.kind b{font:400 16px var(--head)}
-.kind-count{font-size:13px;color:#4e5c46}
-.kind.questions .kind-count{color:var(--sky-ink)}
-.kind i{display:block;width:40px;height:3px;border-radius:2px;background:currentColor;opacity:.3;margin:4px 0 1px}
-.kind-go{font-size:13px;opacity:.75}
-.record-toolbar{justify-content:flex-end}
 
 /* 문장 모음집 — 상자 없이 인용처럼 */
 .quotes{display:flex;flex-direction:column}
@@ -508,3 +494,17 @@ details.then small{display:block;font-size:11px}
 .ctx-focus.ask small{display:block;color:var(--sky-ink);font:400 13px/1.5 var(--head);margin-bottom:4px}
 .navigation,body[data-page=home] .navigation{width:min(calc(100% - 20px),500px)}
 .navigation a,body[data-page=home] .navigation a{font-size:12px}
+
+/* ── 책 화면: 이야기하기는 크게, 문장 · 질문은 나란한 탭 단추 ── */
+.book-hero .small-actions{margin-top:6px}
+.book-hero .small-actions .quiet{min-height:38px;padding:4px 10px;font-size:13px;color:var(--muted)}
+.book-hero .actions .primary{min-width:170px}
+.book-tabs{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:0 0 14px}
+.book-tabs > .primary{min-height:44px;padding:6px 16px}
+.seg{display:inline-flex;gap:4px;padding:4px;background:var(--surface);border:3px solid var(--line);border-radius:999px}
+.seg button{min-height:40px;padding:0 15px;border:0;border-radius:999px;box-shadow:none;background:transparent;color:var(--muted);font:400 15px var(--head);display:inline-flex;align-items:center;gap:5px}
+.seg button:active{transform:none}
+.seg button span{font-size:18px;line-height:1}
+.seg button small{font:400 12px var(--body);opacity:.8}
+.seg button.entries[aria-pressed=true]{background:var(--mint-pale);color:#2f5a3a;box-shadow:inset 0 0 0 2px var(--mint-line)}
+.seg button.questions[aria-pressed=true]{background:var(--sky);color:var(--sky-ink);box-shadow:inset 0 0 0 2px #c5d8ea}
