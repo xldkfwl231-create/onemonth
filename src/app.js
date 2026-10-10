@@ -3,7 +3,7 @@ import { mountSlime } from './slime.js';
 import { openStore, load, commit, previous } from './storage.js';
 import { BOOK_SEARCH_ENDPOINT, AI_ENDPOINT, AI_REFLECT_ENDPOINT } from './config.js';
 
-const BUILD = '1011c';   // 폰에서 어떤 판을 보고 있는지 확인용
+const BUILD = '1011d';   // 폰에서 어떤 판을 보고 있는지 확인용
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 let state = emptyState(), db, revision = 0, busy = false, ready = false;
@@ -49,13 +49,14 @@ function render() {
   const raw = route().page, page = ['cat', 'room', 'moments', 'trips', 'day'].includes(raw) ? 'home' : raw;   // 옛 주소는 첫 화면으로
   if (slime && page !== 'home') { slime.destroy(); slime = null; }
   if (page !== 'home') document.body.classList.remove('night');
-  const tab = { book:'shelf', questions:'shelf', shelf:'shelf', thoughts:'thoughts' }[page] || 'home';
+  const tab = { book:'shelf', questions:'shelf', shelf:'shelf', thoughts:'thoughts', me:'me', answers:'me' }[page] || 'home';
   document.querySelectorAll('[data-nav]').forEach(a => { if (a.dataset.nav === tab) a.setAttribute('aria-current','page'); else a.removeAttribute('aria-current'); });
   document.body.dataset.page = page;
   if (page === 'book') renderBook();
   else if (page === 'questions') renderQuestions();
   else if (page === 'thoughts') renderThoughts();
   else if (page === 'answers') renderAnswers();
+  else if (page === 'me') renderMe();
   else if (page === 'shelf') renderShelf();
   else renderHome();
 }
@@ -187,15 +188,16 @@ async function reflectToday() {
 }
 // 요즘(60일) 가장 많은 주제가 슬라임 겉색에 스밉니다
 function slimeLook() {
-  const base = [169, 211, 164], top = tagCounts(60), total = top.reduce((n, x) => n + x[1], 0);
+  const top = tagCounts(60), total = top.reduce((n, x) => n + x[1], 0);
   if (!top.length || total < 3 || top[0][0] === '독서' && top.length === 1) return { color: '#a9d3a4' };
   const [tag, count] = top[0], share = count / total;
   let h = 5381; for (const c of tag) h = ((h << 5) + h + c.charCodeAt(0)) | 0;
-  const hue = (h >>> 0) % 360, k = Math.min(0.55, share * 1.1);
-  const c = 0.55 * (1 - Math.abs(2 * 0.72 - 1)), x = c * (1 - Math.abs((hue / 60) % 2 - 1)), m = 0.72 - c / 2;
+  // 색은 색상환을 따라 옮깁니다 — RGB로 섞으면 반대색끼리 흙빛이 됨
+  const target = (h >>> 0) % 360, k = Math.min(0.55, share * 1.1), base = 113;
+  const diff = ((target - base + 540) % 360) - 180, hue = (base + diff * k + 360) % 360;
+  const sat = 0.42, light = 0.73, c = (1 - Math.abs(2 * light - 1)) * sat, x = c * (1 - Math.abs((hue / 60) % 2 - 1)), m = light - c / 2;
   const [r1, g1, b1] = hue < 60 ? [c, x, 0] : hue < 120 ? [x, c, 0] : hue < 180 ? [0, c, x] : hue < 240 ? [0, x, c] : hue < 300 ? [x, 0, c] : [c, 0, x];
-  const mix = [r1, g1, b1].map((v, i) => Math.round(base[i] * (1 - k) + (v + m) * 255 * k));
-  return { color: '#' + mix.map(v => v.toString(16).padStart(2, '0')).join(''), tag };
+  return { color: '#' + [r1, g1, b1].map(v => Math.round((v + m) * 255).toString(16).padStart(2, '0')).join(''), tag };
 }
 const tagLine = id => { const t = state.readings[id]?.tags; return t?.length ? `<p class="tag-line">${t.map(x => `<span>#${esc(x)}</span>`).join('')}</p>` : ''; };
 function beadList() {
@@ -285,7 +287,7 @@ function renderQuestions() {
 }
 function renderAnswers() {
   const name = state.profile.catName || '슬라임';
-  $('#main').innerHTML = `<div class="narrow"><a class="back" href="#home">← ${esc(name)}에게</a><div class="intro"><div><h1>${esc(name)}에게 한 답</h1><p>하루 한 번 건네는 질문에 본 대로 답한 것들.</p></div></div>${state.answers.length ? timeline([...state.answers].reverse(), a => `<span class="tl-date">${esc(dayShort(a.createdAt))}</span><p class="asked">${esc(a.prompt)}</p><p class="tl-text">${esc(a.text)}</p>${tagLine(a.id)}<div class="q-actions"><button data-action="edit-answer" data-id="${esc(a.id)}">수정</button><button data-action="delete-record" data-type="answers" data-id="${esc(a.id)}">삭제</button></div>`) : empty('아직 답한 게 없어요', '첫 화면의 물음표를 누르면 오늘의 질문이 있습니다.')}</div>`;
+  $('#main').innerHTML = `<div class="narrow"><a class="back" href="#me">← 나</a><div class="intro"><div><h1>${esc(name)}에게 한 답</h1><p>하루 한 번 건네는 질문에 본 대로 답한 것들.</p></div></div>${state.answers.length ? timeline([...state.answers].reverse(), a => `<span class="tl-date">${esc(dayShort(a.createdAt))}</span><p class="asked">${esc(a.prompt)}</p><p class="tl-text">${esc(a.text)}</p>${tagLine(a.id)}<div class="q-actions"><button data-action="edit-answer" data-id="${esc(a.id)}">수정</button><button data-action="delete-record" data-type="answers" data-id="${esc(a.id)}">삭제</button></div>`) : empty('아직 답한 게 없어요', '첫 화면의 물음표를 누르면 오늘의 질문이 있습니다.')}</div>`;
 }
 function renderThoughts() {
   $('#main').innerHTML = `<div class="narrow"><div class="intro"><div><h1>떠오르는 생각</h1><p>책과 상관없이, 스스로 떠오른 것.</p></div><button class="primary intro-actions" data-action="add-journal">＋ 기록</button></div>${state.thoughts.length ? timeline([...state.thoughts].reverse(), t => `<span class="tl-date">${esc(dayShort(t.createdAt))}</span><p class="tl-text">${esc(t.text)}</p>${tagLine(t.id)}<div class="q-actions"><button data-action="edit-journal" data-id="${esc(t.id)}">수정</button><button data-action="delete-record" data-type="thoughts" data-id="${esc(t.id)}">삭제</button></div>`) : empty('아무렇게나, 한 줄부터', '잘 정리하지 않아도 괜찮습니다.')}</div>`;
@@ -407,17 +409,45 @@ function aiStatus() {
   const today = state.insights?.date === todayKey() ? ` 오늘의 말 ${state.insights.lines.length}줄을 만들어 뒀습니다.` : '';
   return state.profile.aiConsentAt ? `${all.length}개 중 ${done}개를 읽었습니다.${today}${readBackoff > Date.now() || reflectBackoff > Date.now() ? ' 지금은 연결이 안 돼서 잠시 뒤 다시 시도합니다.' : ''}` : '꺼져 있습니다. 켜기 전까지는 아무것도 보내지 않습니다.';
 }
-function settings() {
-  const s = stats(state);
-  openModal('기록 보관함',`<p class="hint">책 ${s.books}권 · 문장 ${s.entries}개 · 질문 ${s.questions}개<br>생각 ${s.thoughts}개 · 슬라임에게 한 답 ${s.answers}개</p><p>기록은 이 기기의 브라우저에 저장됩니다.<br>휴대폰과 PC 사이에 자동으로 공유되지는 않습니다.</p><div class="storage-block"><h3>슬라임이 기록 읽기</h3><p class="hint">켜면 내가 쓴 <b>생각, 슬라임에게 한 답, 책 문장에 단 내 생각</b>을 AI(Anthropic Claude)에게 보내 주제어를 붙입니다. 책에서 옮겨 적은 문장은 보내지 않습니다. 중계소는 글을 저장하지 않고, 주제어는 이 기기에만 남습니다. 언제든 끌 수 있습니다.</p><button id="ai-toggle" class="${state.profile.aiConsentAt ? '' : 'primary'}">${state.profile.aiConsentAt ? '끄기' : '켜기'}</button><p class="hint" id="ai-status">${aiStatus()}</p></div><div class="storage-block"><h3>슬라임</h3><p class="hint">이름과 말투를 고칩니다.</p><button id="cat-profile">슬라임 설정</button></div><div class="storage-block"><h3>파일로 남겨두기</h3><p class="hint">직접 올린 표지 사진까지 포함해 내려받습니다. 검색으로 연결한 표지는 주소가 저장되어 인터넷 연결이 필요합니다.</p><button class="primary" id="export">전체 기록 내보내기</button></div><div class="storage-block"><h3>백업에서 가져오기</h3><p class="hint">이전 기록장의 JSON 파일도 읽을 수 있습니다. 파일을 고르면 복원할 내용을 먼저 보여드립니다.</p><label class="file-label">백업 파일 선택<input class="visually-hidden" type="file" id="import" accept=".json,application/json"></label><div id="restore-area"></div></div><div class="storage-block"><h3>직전 저장 상태</h3><p class="hint">바로 전 저장으로 돌아갑니다. 복원 시 현재 기록도 파일로 내려받습니다.</p><button id="previous">직전 상태 확인</button></div><div class="storage-block"><h3>오래 보관하기</h3><p class="hint">브라우저 데이터를 지우면 기록도 지워집니다. 중요한 기록은 파일로도 보관해주세요.</p><button id="persistent">브라우저에 보관 요청</button><p class="hint" id="persistent-status"></p></div>`);
-  $('#cat-profile').onclick = () => profileEditor();
+// ── 나: 슬라임, 오늘의 말, 기록 모아보기, AI, 보관 ────────────────
+const miniSlime = color => `<svg viewBox="0 0 64 64" aria-hidden="true"><ellipse cx="32" cy="55" rx="20" ry="3.5" fill="#000" opacity=".08"/><path d="M10 46C7 28 17 14 32 14s25 14 22 32c-1 6-43 6-44 0z" fill="${color}" stroke="rgba(0,0,0,.12)" stroke-width="2"/><ellipse cx="23" cy="25" rx="5" ry="2.8" fill="#fff" opacity=".8"/><circle cx="26" cy="35" r="2.6" fill="#3a3129"/><circle cx="38" cy="35" r="2.6" fill="#3a3129"/><path d="M29 40q3 3 6 0" fill="none" stroke="#3a3129" stroke-width="2" stroke-linecap="round"/></svg>`;
+function renderMe() {
+  const p = state.profile, name = p.catName || '나만의 슬라임', s = stats(state), look = slimeLook();
+  const first = beadList().find(b => b.at), days = first ? Math.max(1, Math.round((Date.now() - first.at) / 864e5)) : 0;
+  const ins = state.insights?.date === todayKey() && (state.insights.lines.length || state.insights.question) ? state.insights : null;
+  const open = state.books.reduce((n, b) => n + b.questions.filter(q => !q.answer).length, 0);
+  const row = (href, label, count) => `<a class="me-row" href="${href}"><span>${label}</span><b>${count}</b><i aria-hidden="true">›</i></a>`;
+  $('#main').innerHTML = `<div class="narrow me">
+    <section class="me-card me-slime">
+      <div class="me-avatar">${miniSlime(look.color)}</div>
+      <div class="me-who"><h1>${esc(name)}</h1><p>${days ? `<span>함께한 지 ${days}일</span> · ` : ''}<span>방울 ${beadList().length}개</span>${look.tag ? ` · <span>요즘 #${esc(look.tag)}</span>` : ''}</p></div>
+      <button data-action="profile">바꾸기</button>
+    </section>
+    ${ins ? `<section class="me-card me-today"><h2>오늘 ${esc(name)}의 말</h2>${ins.lines.map(l => `<p class="me-line">${esc(l.text)}</p>`).join('')}${ins.question ? `<p class="me-q"><span>오늘의 질문</span>${esc(ins.question)}</p>` : ''}</section>` : ''}
+    <section class="me-card"><h2>기록 모아보기</h2>
+      ${row('#answers', `${esc(name)}에게 한 답`, s.answers)}${row('#questions', '아직 품은 질문', open)}${row('#shelf', '책', s.books + '권')}${row('#thoughts', '생각', s.thoughts)}
+    </section>
+    <section class="me-card"><h2>슬라임이 기록 읽기</h2>
+      <p class="hint">켜면 내가 쓴 <b>생각, 슬라임에게 한 답, 책 문장에 단 내 생각</b>을 AI(Anthropic Claude)에게 보내 주제어를 붙이고, 하루 한 번 '그땐 / 지금은' 말과 오늘의 질문을 만듭니다. 책에서 옮겨 적은 문장은 보내지 않습니다. 중계소는 글을 저장하지 않고, 결과는 이 기기에만 남습니다.</p>
+      <div class="me-toggle"><button id="ai-toggle" class="${p.aiConsentAt ? '' : 'primary'}">${p.aiConsentAt ? '끄기' : '켜기'}</button><p class="hint" id="ai-status">${aiStatus()}</p></div>
+    </section>
+    <section class="me-card"><h2>보관</h2>
+      <p class="hint">기록은 이 폰의 브라우저에만 있습니다. 가끔 파일로 내려받아 두세요.</p>
+      <button id="open-backup">백업과 복원</button>
+    </section>
+    <p class="me-foot">본 대로, 거짓 없이 · <span id="me-build">${esc($('#save-status').textContent)}</span></p>
+  </div>`;
+  $('#open-backup').onclick = () => { if (ready && !busy) settings(); };
   $('#ai-toggle').onclick = async () => {
     const on = !state.profile.aiConsentAt;
     if (await change(s => { s.profile.aiConsentAt = on ? now() : ''; }, on ? '슬라임이 기록을 읽기 시작합니다.' : '슬라임이 기록 읽기를 멈췄습니다.')) {
-      $('#ai-toggle').textContent = on ? '끄기' : '켜기'; $('#ai-toggle').classList.toggle('primary', !on); $('#ai-status').textContent = aiStatus();
-      if (on) { readBackoff = 0; await readRecords(); if ($('#ai-status')) $('#ai-status').textContent = aiStatus(); }
+      if (on) { readBackoff = 0; reflectBackoff = 0; await readRecords(); if (route().page === 'me') renderMe(); }
     }
   };
+}
+function settings() {
+  const s = stats(state);
+  openModal('백업과 복원',`<p class="hint">책 ${s.books}권 · 문장 ${s.entries}개 · 질문 ${s.questions}개<br>생각 ${s.thoughts}개 · 슬라임에게 한 답 ${s.answers}개</p><p>기록은 이 기기의 브라우저에 저장됩니다.<br>휴대폰과 PC 사이에 자동으로 공유되지는 않습니다.</p><div class="storage-block"><h3>파일로 남겨두기</h3><p class="hint">직접 올린 표지 사진까지 포함해 내려받습니다. 검색으로 연결한 표지는 주소가 저장되어 인터넷 연결이 필요합니다.</p><button class="primary" id="export">전체 기록 내보내기</button></div><div class="storage-block"><h3>백업에서 가져오기</h3><p class="hint">이전 기록장의 JSON 파일도 읽을 수 있습니다. 파일을 고르면 복원할 내용을 먼저 보여드립니다.</p><label class="file-label">백업 파일 선택<input class="visually-hidden" type="file" id="import" accept=".json,application/json"></label><div id="restore-area"></div></div><div class="storage-block"><h3>직전 저장 상태</h3><p class="hint">바로 전 저장으로 돌아갑니다. 복원 시 현재 기록도 파일로 내려받습니다.</p><button id="previous">직전 상태 확인</button></div><div class="storage-block"><h3>오래 보관하기</h3><p class="hint">브라우저 데이터를 지우면 기록도 지워집니다. 중요한 기록은 파일로도 보관해주세요.</p><button id="persistent">브라우저에 보관 요청</button><p class="hint" id="persistent-status"></p></div>`);
   $('#export').onclick = () => exportState();
   $('#import').onchange = async e => {
     const f = e.target.files[0]; if (!f) return;
@@ -475,7 +505,6 @@ document.addEventListener('click', e => {
   }
   if (btn.id === 'ask-fab') { askOpen = !askOpen; syncAsk(); }
 });
-$('#settings').onclick = () => { if (ready && !busy) settings(); };
 window.addEventListener('hashchange',() => { if (dialog.open) closeModal(); render(); window.scrollTo(0,0); });
 window.addEventListener('beforeunload',e => { if (busy) { e.preventDefault(); e.returnValue = ''; } });
 channel && (channel.onmessage = async e => {
