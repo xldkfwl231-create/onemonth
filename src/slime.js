@@ -101,10 +101,12 @@ export function mountSlime(container, { look = {}, onPoke = () => {}, onBead = (
   beadMesh.count = 0; beadMesh.frustumCulled = false; group.add(beadMesh);
   let beads = [];                                                // { id, kind, home: Vector3, pos: Vector3, vy, size, falling }
   const hash = str => { let h = 2166136261; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0) / 4294967295; };
-  function slotFor(id, rank, total) {
+  function slotFor(id, rank, total, tag) {
     const y = total <= 1 ? -0.05 : -0.36 + 0.66 * (rank / (total - 1));    // 오래된 순서로 아래에서 위로
     const r = Math.max(0.08, Math.sqrt(Math.max(0, 0.62 - (y * 1.25) ** 2)) * 0.82);
-    const a = hash(id) * Math.PI * 2, d = Math.sqrt(hash(id + '·')) * r;
+    // 주제어가 있으면 같은 주제끼리 같은 쪽에 모입니다
+    const a = tag ? hash(tag) * Math.PI * 2 + (hash(id) - 0.5) * 0.7 : hash(id) * Math.PI * 2;
+    const d = tag ? (0.55 + 0.4 * hash(id + '·')) * r : Math.sqrt(hash(id + '·')) * r;
     return new THREE.Vector3(Math.cos(a) * d, y, Math.sin(a) * d);
   }
   const beadColor = new THREE.Color(), m4 = new THREE.Matrix4(), q0 = new THREE.Quaternion(), v3 = new THREE.Vector3();
@@ -120,7 +122,7 @@ export function mountSlime(container, { look = {}, onPoke = () => {}, onBead = (
     const old = new Map(beads.map(b => [b.id, b]));
     let delay = 0;
     beads = list.map((it, rank) => {
-      const home = slotFor(it.id, rank, list.length), prev = old.get(it.id);
+      const home = slotFor(it.id, rank, list.length, it.tag), prev = old.get(it.id);
       if (prev) return { ...prev, kind: it.kind, home, size };
       if (drop.includes(it.id)) { delay += Math.min(0.35, 2.5 / drop.length); return { id: it.id, kind: it.kind, home, size, pos: new THREE.Vector3(home.x * 0.4, 2.6 + delay * 2.2, home.z * 0.4), vy: 0, falling: true, splashed: false }; }
       return { id: it.id, kind: it.kind, home, size, pos: home.clone(), vy: 0, falling: false };

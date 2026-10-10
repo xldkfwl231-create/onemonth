@@ -1,11 +1,15 @@
-/* 기록장 — 도서 검색 중계소 (Cloudflare Workers)
+/* 나만의 슬라임 만들기 — 중계소 (Cloudflare Workers)
  *
- * 앱(index.html)은 여기로만 말을 겁니다. 카카오 열쇠는 이 안에만 있고
- * 앱에는 들어가지 않습니다. 열쇠는 코드에 적지 말고 Cloudflare의
- * Settings → Variables → Secrets 에 KAKAO_KEY 라는 이름으로 넣으세요.
+ * 앱(index.html)은 여기로만 말을 겁니다. 열쇠는 이 안에만 있고 앱에는 들어가지 않습니다.
+ * 열쇠는 코드에 적지 말고 Cloudflare의 Settings → Variables and Secrets 에 넣으세요.
+ *   KAKAO_KEY      — 책 검색 (카카오 REST API 키)
+ *   ANTHROPIC_KEY  — 슬라임이 기록 읽기 (Anthropic API 키)
  *
- * 쓰는 법:  https://<이름>.workers.dev/?q=독서의 기술
- * 돌려주는 것: [{ title, authors, publisher, cover, isbn }, ...]
+ * GET  /?q=독서의 기술   → 책 검색. [{ title, authors, publisher, cover, isbn }, ...]
+ * POST /ai/tags          → 기록마다 주제어 1~3개. { items: [{ id, text }], known: [주제어] } → { items: [{ id, tags }] }
+ * GET  /ai/health        → 열쇠가 들어 있는지만 알려 줌 (열쇠 값은 절대 내보내지 않음)
+ *
+ * 이 중계소는 기록을 저장하지 않습니다. 받은 글을 AI에 넘기고 답만 돌려줍니다.
  */
 
 // 이 주소에서 오는 요청만 받습니다. 앱 주소가 바뀌면 여기를 고치세요.
@@ -15,68 +19,143 @@ const ALLOWED = [
   'http://localhost:4173',
 ];
 
+const MODEL = 'claude-haiku-5-5';
+const MAX_ITEMS = 30, MAX_TEXT = 1500, MAX_KNOWN = 80;
+
 export default {
   async fetch(request, env) {
     const origin = request.headers.get('Origin') || '';
     const allow = ALLOWED.includes(origin) ? origin : ALLOWED[0];
-
     const cors = {
       'Access-Control-Allow-Origin': allow,
-      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type',
       'Content-Type': 'application/json; charset=utf-8',
+      'Vary': 'Origin',
     };
+    const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: cors });
 
     if (request.method === 'OPTIONS') {
       return new Response(null, { headers: { ...cors, 'Access-Control-Max-Age': '86400' } });
     }
 
-    const q = (new URL(request.url).searchParams.get('q') || '').trim();
-    if (!q) return new Response('[]', { headers: cors });
-
-    // 같은 검색어는 하루 동안 캐시에서 꺼내 씁니다 — 카카오 호출을 아낍니다.
-    const cacheKey = new Request('https://cache/book?q=' + encodeURIComponent(q));
-    const cached = await caches.default.match(cacheKey);
-    if (cached) {
-      const body = await cached.text();
-      return new Response(body, { headers: cors });
+    const path = new URL(request.url).pathname.replace(/\/+$/, '');
+    if (path === '/ai/health') return json({ ok: true, key: !!env.ANTHROPIC_KEY, model: MODEL });
+    if (path === '/ai/tags') {
+      if (request.method !== 'POST') return json({ error: 'POST만 받습니다' }, 405);
+      if (!ALLOWED.includes(origin)) return json({ error: '허용되지 않은 주소입니다' }, 403);
+      if (!env.ANTHROPIC_KEY) return json({ error: 'ANTHROPIC_KEY가 설정되지 않았습니다' }, 503);
+      return tags(request, env, json);
     }
-
-    let res;
-    try {
-      res = await fetch(
-        'https://dapi.kakao.com/v3/search/book?target=title&size=10&query=' + encodeURIComponent(q),
-        { headers: { Authorization: 'KakaoAK ' + env.KAKAO_KEY } }
-      );
-    } catch (e) {
-      return new Response(JSON.stringify({ error: '검색 서버에 닿지 못했습니다' }), {
-        status: 502, headers: cors,
-      });
-    }
-
-    if (!res.ok) {
-      return new Response(JSON.stringify({ error: '검색 실패', status: res.status }), {
-        status: 502, headers: cors,
-      });
-    }
-
-    const data = await res.json();
-    const books = (data.documents || []).map(function (d) {
-      return {
-        title: d.title,
-        authors: (d.authors || []).join(', '),
-        publisher: d.publisher,
-        cover: d.thumbnail,          // 표지 이미지 주소
-        isbn: (d.isbn || '').split(' ').pop(),
-      };
-    });
-
-    const body = JSON.stringify(books);
-    const out = new Response(body, {
-      headers: { ...cors, 'Cache-Control': 'public, max-age=86400' },
-    });
-    // 캐시에 넣는 건 응답을 돌려준 뒤에 해도 됩니다.
-    await caches.default.put(cacheKey, out.clone());
-    return new Response(body, { headers: cors });
+    return bookSearch(request, env, cors);
   },
 };
+
+// ── 슬라임이 기록 읽기: 주제어 뽑기 ─────────────────────────────
+async function tags(request, env, json) {
+  let body;
+  try { body = await request.json(); } catch { return json({ error: '형식이 올바르지 않습니다' }, 400); }
+  const items = Array.isArray(body?.items) ? body.items : null;
+  if (!items || !items.length || items.length > MAX_ITEMS) return json({ error: `기록은 1~${MAX_ITEMS}개씩 보내 주세요` }, 400);
+  const clean = [];
+  for (const it of items) {
+    if (typeof it?.id !== 'string' || it.id.length > 100 || typeof it?.text !== 'string' || !it.text.trim()) return json({ error: '기록 형식이 올바르지 않습니다' }, 400);
+    clean.push({ id: it.id, text: it.text.slice(0, MAX_TEXT) });
+  }
+  const known = (Array.isArray(body.known) ? body.known : []).filter(t => typeof t === 'string' && t.length <= 12).slice(0, MAX_KNOWN);
+
+  const system = [
+    '당신은 한 사람이 자기 자신에 대해 적은 짧은 기록을 읽고, 기록마다 주제어를 붙이는 도우미입니다.',
+    '규칙:',
+    '- 기록마다 주제어 1~3개. 2~6글자의 한국어 명사. 예: 회의, 기운, 리더십, 혼자, 쇼츠, 운동, 일, 사람, 독서',
+    '- 그 기록에 실제로 나온 내용만. 짐작하거나 확대하지 마세요.',
+    '- 사람을 평가하거나 진단하는 말은 쓰지 마세요. 예: 내향적, 게으름, 우울, 문제, 성공',
+    '- "이미 쓰는 주제어" 목록에 뜻이 같은 단어가 있으면 그 단어를 그대로 쓰세요. 비슷한 말을 새로 만들지 마세요.',
+    '- 모든 기록의 id를 빠짐없이 그대로 돌려주세요.',
+  ].join('\n');
+  const user = JSON.stringify({ '이미 쓰는 주제어': known, '기록': clean });
+
+  let res;
+  try {
+    res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'x-api-key': env.ANTHROPIC_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: MODEL,
+        max_tokens: 4000,
+        system,
+        messages: [{ role: 'user', content: user }],
+        output_config: {
+          effort: 'low',
+          format: {
+            type: 'json_schema',
+            schema: {
+              type: 'object',
+              properties: {
+                items: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: { id: { type: 'string' }, tags: { type: 'array', items: { type: 'string' } } },
+                    required: ['id', 'tags'],
+                    additionalProperties: false,
+                  },
+                },
+              },
+              required: ['items'],
+              additionalProperties: false,
+            },
+          },
+        },
+      }),
+    });
+  } catch {
+    return json({ error: 'AI 서버에 닿지 못했습니다' }, 502);
+  }
+  if (!res.ok) return json({ error: 'AI 요청 실패', status: res.status }, 502);
+  const data = await res.json();
+  if (data.stop_reason === 'refusal') return json({ error: 'AI가 이 기록을 처리하지 않았습니다' }, 422);
+  if (data.stop_reason === 'max_tokens') return json({ error: '한 번에 너무 많이 보냈습니다' }, 413);
+  const text = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
+  let out;
+  try { out = JSON.parse(text); } catch { return json({ error: 'AI 답을 읽지 못했습니다' }, 502); }
+  const ids = new Set(clean.map(c => c.id));
+  const result = (out.items || [])
+    .filter(it => ids.has(it.id) && Array.isArray(it.tags))
+    .map(it => ({ id: it.id, tags: [...new Set(it.tags.filter(t => typeof t === 'string').map(t => t.trim()).filter(t => t && t.length <= 12))].slice(0, 3) }));
+  return json({ items: result, model: MODEL, usage: data.usage ? { input: data.usage.input_tokens, output: data.usage.output_tokens } : undefined });
+}
+
+// ── 책 검색 (카카오) ────────────────────────────────────────────
+async function bookSearch(request, env, cors) {
+  const q = (new URL(request.url).searchParams.get('q') || '').trim();
+  if (!q) return new Response('[]', { headers: cors });
+
+  // 같은 검색어는 하루 동안 캐시에서 꺼내 씁니다 — 카카오 호출을 아낍니다.
+  const cacheKey = new Request('https://cache/book?q=' + encodeURIComponent(q));
+  const cached = await caches.default.match(cacheKey);
+  if (cached) return new Response(await cached.text(), { headers: cors });
+
+  let res;
+  try {
+    res = await fetch(
+      'https://dapi.kakao.com/v3/search/book?target=title&size=10&query=' + encodeURIComponent(q),
+      { headers: { Authorization: 'KakaoAK ' + env.KAKAO_KEY } }
+    );
+  } catch (e) {
+    return new Response(JSON.stringify({ error: '검색 서버에 닿지 못했습니다' }), { status: 502, headers: cors });
+  }
+  if (!res.ok) return new Response(JSON.stringify({ error: '검색 실패', status: res.status }), { status: 502, headers: cors });
+
+  const data = await res.json();
+  const books = (data.documents || []).map(d => ({
+    title: d.title,
+    authors: (d.authors || []).join(', '),
+    publisher: d.publisher,
+    cover: d.thumbnail,          // 표지 이미지 주소
+    isbn: (d.isbn || '').split(' ').pop(),
+  }));
+  const body = JSON.stringify(books);
+  await caches.default.put(cacheKey, new Response(body, { headers: { ...cors, 'Cache-Control': 'public, max-age=86400' } }));
+  return new Response(body, { headers: cors });
+}

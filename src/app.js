@@ -1,9 +1,9 @@
 import { uid, now, emptyState, normalize, backup, stats, matchesBook, dateLabel, safeCover, dayOf, nextQuestion, isIso } from './core.js';
 import { mountSlime } from './slime.js';
 import { openStore, load, commit, previous } from './storage.js';
-import { BOOK_SEARCH_ENDPOINT } from './config.js';
+import { BOOK_SEARCH_ENDPOINT, AI_ENDPOINT } from './config.js';
 
-const BUILD = '1011a';   // 폰에서 어떤 판을 보고 있는지 확인용
+const BUILD = '1011b';   // 폰에서 어떤 판을 보고 있는지 확인용
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 let state = emptyState(), db, revision = 0, busy = false, ready = false;
@@ -27,6 +27,7 @@ async function change(edit, message = '기록을 보관했습니다.') {
     edit(next);
     revision = await commit(db, next, revision);
     state = next; channel?.postMessage(revision); status('이 브라우저에 저장됨');
+    setTimeout(readRecords, 600);   // 새 기록이 있으면 슬라임이 읽어 둡니다
     render(); if (message) notice(message); return true;
   } catch (e) { status('저장 실패 · 작성 내용을 보관해주세요', true); showError(e.message); return false; }
   finally { busy = false; }
@@ -115,13 +116,65 @@ function syncAsk() {
   fab.querySelector('.ask-dot').hidden = !pending || askOpen;
 }
 // 슬라임이 먹은 기록 — 생각, 책 문장, 슬라임에게 한 답. 오래된 것부터.
+// ── 슬라임이 기록 읽기 (AI) ──────────────────────────────────
+// 보내는 것: 생각, 슬라임에게 한 답, 책 문장에 단 '내 생각'. 책에서 옮겨 적은 문장은 보내지 않습니다.
+const textHash = t => { let h = 5381; for (let i = 0; i < t.length; i++) h = ((h << 5) + h + t.charCodeAt(i)) | 0; return String(h >>> 0); };
+function aiSources() {
+  const out = [];
+  for (const t of state.thoughts) out.push({ id: t.id, text: t.text });
+  for (const a of state.answers) out.push({ id: a.id, text: `질문: ${a.prompt}\n답: ${a.text}` });
+  for (const b of state.books) for (const e of b.entries) if (e.note) out.push({ id: e.id, text: `책 『${b.title}』을 읽다가 남긴 내 생각: ${e.note}` });
+  return out.map(x => ({ ...x, h: textHash(x.text) }));
+}
+// 기록의 주제어. 내 생각 없이 문장만 옮겨 둔 책 기록은 '독서'
+function tagsOf(id) {
+  const r = state.readings[id]; if (r?.tags?.length) return r.tags;
+  return state.books.some(b => b.entries.some(e => e.id === id && !e.note)) ? ['독서'] : [];
+}
+function tagCounts(sinceDays = 0) {
+  const since = sinceDays ? Date.now() - sinceDays * 864e5 : 0, n = new Map();
+  for (const b of beadList()) { if (b.at < since) continue; for (const t of tagsOf(b.id)) n.set(t, (n.get(t) || 0) + 1); }
+  return [...n.entries()].sort((a, b) => b[1] - a[1]);
+}
+let reading = false, readBackoff = 0;
+async function readRecords() {
+  if (reading || !ready || busy || !state.profile.aiConsentAt || !AI_ENDPOINT || !navigator.onLine || Date.now() < readBackoff) return;
+  const todo = aiSources().filter(x => state.readings[x.id]?.h !== x.h).slice(0, 25);
+  if (!todo.length) return;
+  reading = true;
+  try {
+    const res = await fetch(AI_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items: todo.map(({ id, text }) => ({ id, text })), known: tagCounts().slice(0, 80).map(x => x[0]) }), signal: AbortSignal.timeout(30000) });
+    if (!res.ok) throw new Error(String(res.status));
+    const got = new Map(((await res.json()).items || []).map(x => [x.id, x.tags]));
+    reading = false;
+    await change(s => {
+      const live = new Set(aiSources().map(x => x.id));
+      for (const id of Object.keys(s.readings)) if (!live.has(id)) delete s.readings[id];   // 지운 기록의 주제어도 정리
+      for (const x of todo) s.readings[x.id] = { tags: (got.get(x.id) || []).slice(0, 3), h: x.h, at: now() };
+    }, '');
+  } catch { readBackoff = Date.now() + 5 * 60e3; }
+  finally { reading = false; }
+}
+// 요즘(60일) 가장 많은 주제가 슬라임 겉색에 스밉니다
+function slimeLook() {
+  const base = [169, 211, 164], top = tagCounts(60), total = top.reduce((n, x) => n + x[1], 0);
+  if (!top.length || total < 3 || top[0][0] === '독서' && top.length === 1) return { color: '#a9d3a4' };
+  const [tag, count] = top[0], share = count / total;
+  let h = 5381; for (const c of tag) h = ((h << 5) + h + c.charCodeAt(0)) | 0;
+  const hue = (h >>> 0) % 360, k = Math.min(0.55, share * 1.1);
+  const c = 0.55 * (1 - Math.abs(2 * 0.72 - 1)), x = c * (1 - Math.abs((hue / 60) % 2 - 1)), m = 0.72 - c / 2;
+  const [r1, g1, b1] = hue < 60 ? [c, x, 0] : hue < 120 ? [x, c, 0] : hue < 180 ? [0, c, x] : hue < 240 ? [0, x, c] : hue < 300 ? [x, 0, c] : [c, 0, x];
+  const mix = [r1, g1, b1].map((v, i) => Math.round(base[i] * (1 - k) + (v + m) * 255 * k));
+  return { color: '#' + mix.map(v => v.toString(16).padStart(2, '0')).join(''), tag };
+}
+const tagLine = id => { const t = state.readings[id]?.tags; return t?.length ? `<p class="tag-line">${t.map(x => `<span>#${esc(x)}</span>`).join('')}</p>` : ''; };
 function beadList() {
   const t = v => isIso(v) ? Date.parse(v) : 0;
   return [
     ...state.thoughts.map(x => ({ id: x.id, kind: 'thought', at: t(x.createdAt) })),
     ...state.books.flatMap(b => b.entries.map(x => ({ id: x.id, kind: 'entry', at: t(x.createdAt) }))),
     ...state.answers.map(x => ({ id: x.id, kind: 'answer', at: t(x.createdAt) }))
-  ].sort((a, b) => a.at - b.at);
+  ].map(b => ({ ...b, tag: state.readings[b.id]?.tags?.[0] })).sort((a, b) => a.at - b.at);
 }
 // 처음 보는 기록만 위에서 떨어뜨립니다. 본 것은 이 기기에만 기억합니다.
 function syncBeads() {
@@ -130,9 +183,14 @@ function syncBeads() {
   try { seen = JSON.parse(localStorage.getItem('slime-seen') || 'null'); } catch {}
   const drop = seen ? list.filter(b => !seen.includes(b.id)).map(b => b.id) : [];
   slime.setBeads(list, drop);
+  slime.setLook({ color: slimeLook().color });
   try { localStorage.setItem('slime-seen', JSON.stringify(list.map(b => b.id))); } catch {}
 }
 function beadText(id) {
+  const tags = state.readings[id]?.tags?.length ? state.readings[id].tags.map(t => '#' + t).join(' ') + ' — ' : '';
+  return tags + beadBody(id);
+}
+function beadBody(id) {
   const th = state.thoughts.find(x => x.id === id); if (th) return `${dateLabel(th.createdAt)}의 생각. “${th.text.length > 70 ? th.text.slice(0, 70) + '…' : th.text}”`;
   const an = state.answers.find(x => x.id === id); if (an) return `${dateLabel(an.createdAt)}의 답. “${an.text.length > 70 ? an.text.slice(0, 70) + '…' : an.text}”`;
   for (const b of state.books) { const e = b.entries.find(x => x.id === id); if (e) return `『${b.title}』 ${e.page ? `p. ${e.page}` : ''} “${e.text.length > 60 ? e.text.slice(0, 60) + '…' : e.text}”`; }
@@ -172,7 +230,7 @@ function shelfResults() {
 function quoteCard(e, b, type, showBook = false) {
   const question = type === 'questions';
   const meta = [showBook ? `<a href="#book/${esc(b.id)}">${esc(b.title)}</a>` : '', !question && e.page ? `p. ${esc(e.page)}` : '', esc(dateLabel(e.createdAt)), question ? (e.answer ? '답을 남김' : '아직 품는 중') : ''].filter(Boolean).join(' · ');
-  return `<article class="q ${question ? 'q-question' : ''} ${question && e.answer ? 'answered' : ''}"><span class="mark" aria-hidden="true">${question ? '?' : '“'}</span><p class="q-text">${esc(e.text)}</p><p class="q-meta">${meta}</p>${e.note ? `<p class="mine">${esc(e.note)}</p>` : ''}${question && e.answer ? `<p class="mine answer">${esc(e.answer)}<small>${esc(dateLabel(e.answeredAt))}에 남긴 답</small></p>` : ''}<div class="q-actions">${question ? `<button data-action="answer" data-book="${b.id}" data-id="${e.id}">${e.answer ? '답 수정' : '답 남기기'}</button>` : ''}<button data-action="edit-record" data-type="${type}" data-book="${b.id}" data-id="${e.id}">수정</button><button data-action="delete-record" data-type="${type}" data-book="${b.id}" data-id="${e.id}">삭제</button></div></article>`;
+  return `<article class="q ${question ? 'q-question' : ''} ${question && e.answer ? 'answered' : ''}"><span class="mark" aria-hidden="true">${question ? '?' : '“'}</span><p class="q-text">${esc(e.text)}</p><p class="q-meta">${meta}</p>${e.note ? `<p class="mine">${esc(e.note)}</p>` : ''}${question ? '' : tagLine(e.id)}${question && e.answer ? `<p class="mine answer">${esc(e.answer)}<small>${esc(dateLabel(e.answeredAt))}에 남긴 답</small></p>` : ''}<div class="q-actions">${question ? `<button data-action="answer" data-book="${b.id}" data-id="${e.id}">${e.answer ? '답 수정' : '답 남기기'}</button>` : ''}<button data-action="edit-record" data-type="${type}" data-book="${b.id}" data-id="${e.id}">수정</button><button data-action="delete-record" data-type="${type}" data-book="${b.id}" data-id="${e.id}">삭제</button></div></article>`;
 }
 // 달마다 작은 제목을 두고 왼쪽에 선을 그린 타임라인
 function timeline(items, render) {
@@ -197,10 +255,10 @@ function renderQuestions() {
 }
 function renderAnswers() {
   const name = state.profile.catName || '슬라임';
-  $('#main').innerHTML = `<div class="narrow"><a class="back" href="#home">← ${esc(name)}에게</a><div class="intro"><div><h1>${esc(name)}에게 한 답</h1><p>하루 한 번 건네는 질문에 본 대로 답한 것들.</p></div></div>${state.answers.length ? timeline([...state.answers].reverse(), a => `<span class="tl-date">${esc(dayShort(a.createdAt))}</span><p class="asked">${esc(a.prompt)}</p><p class="tl-text">${esc(a.text)}</p><div class="q-actions"><button data-action="edit-answer" data-id="${esc(a.id)}">수정</button><button data-action="delete-record" data-type="answers" data-id="${esc(a.id)}">삭제</button></div>`) : empty('아직 답한 게 없어요', '첫 화면의 물음표를 누르면 오늘의 질문이 있습니다.')}</div>`;
+  $('#main').innerHTML = `<div class="narrow"><a class="back" href="#home">← ${esc(name)}에게</a><div class="intro"><div><h1>${esc(name)}에게 한 답</h1><p>하루 한 번 건네는 질문에 본 대로 답한 것들.</p></div></div>${state.answers.length ? timeline([...state.answers].reverse(), a => `<span class="tl-date">${esc(dayShort(a.createdAt))}</span><p class="asked">${esc(a.prompt)}</p><p class="tl-text">${esc(a.text)}</p>${tagLine(a.id)}<div class="q-actions"><button data-action="edit-answer" data-id="${esc(a.id)}">수정</button><button data-action="delete-record" data-type="answers" data-id="${esc(a.id)}">삭제</button></div>`) : empty('아직 답한 게 없어요', '첫 화면의 물음표를 누르면 오늘의 질문이 있습니다.')}</div>`;
 }
 function renderThoughts() {
-  $('#main').innerHTML = `<div class="narrow"><div class="intro"><div><h1>떠오르는 생각</h1><p>책과 상관없이, 스스로 떠오른 것.</p></div><button class="primary intro-actions" data-action="add-journal">＋ 기록</button></div>${state.thoughts.length ? timeline([...state.thoughts].reverse(), t => `<span class="tl-date">${esc(dayShort(t.createdAt))}</span><p class="tl-text">${esc(t.text)}</p><div class="q-actions"><button data-action="edit-journal" data-id="${esc(t.id)}">수정</button><button data-action="delete-record" data-type="thoughts" data-id="${esc(t.id)}">삭제</button></div>`) : empty('아무렇게나, 한 줄부터', '잘 정리하지 않아도 괜찮습니다.')}</div>`;
+  $('#main').innerHTML = `<div class="narrow"><div class="intro"><div><h1>떠오르는 생각</h1><p>책과 상관없이, 스스로 떠오른 것.</p></div><button class="primary intro-actions" data-action="add-journal">＋ 기록</button></div>${state.thoughts.length ? timeline([...state.thoughts].reverse(), t => `<span class="tl-date">${esc(dayShort(t.createdAt))}</span><p class="tl-text">${esc(t.text)}</p>${tagLine(t.id)}<div class="q-actions"><button data-action="edit-journal" data-id="${esc(t.id)}">수정</button><button data-action="delete-record" data-type="thoughts" data-id="${esc(t.id)}">삭제</button></div>`) : empty('아무렇게나, 한 줄부터', '잘 정리하지 않아도 괜찮습니다.')}</div>`;
 }
 
 function openModal(title, body, key = '') {
@@ -314,10 +372,21 @@ function download(content, filename) {
   const a = document.createElement('a'); a.href = url; a.download = filename; a.click(); setTimeout(() => URL.revokeObjectURL(url),10000);
 }
 function exportState(data = state, prefix = 'my-slime') { download(backup(data),`${prefix}-${new Date().toISOString().slice(0,10)}.json`); }
+function aiStatus() {
+  const all = aiSources(), done = all.filter(x => state.readings[x.id]?.h === x.h).length;
+  return state.profile.aiConsentAt ? `${all.length}개 중 ${done}개를 읽었습니다.${readBackoff > Date.now() ? ' 지금은 연결이 안 돼서 잠시 뒤 다시 시도합니다.' : ''}` : '꺼져 있습니다. 켜기 전까지는 아무것도 보내지 않습니다.';
+}
 function settings() {
   const s = stats(state);
-  openModal('기록 보관함',`<p class="hint">책 ${s.books}권 · 문장 ${s.entries}개 · 질문 ${s.questions}개<br>생각 ${s.thoughts}개 · 슬라임에게 한 답 ${s.answers}개</p><p>기록은 이 기기의 브라우저에 저장됩니다.<br>휴대폰과 PC 사이에 자동으로 공유되지는 않습니다.</p><div class="storage-block"><h3>슬라임</h3><p class="hint">이름과 말투를 고칩니다.</p><button id="cat-profile">슬라임 설정</button></div><div class="storage-block"><h3>파일로 남겨두기</h3><p class="hint">직접 올린 표지 사진까지 포함해 내려받습니다. 검색으로 연결한 표지는 주소가 저장되어 인터넷 연결이 필요합니다.</p><button class="primary" id="export">전체 기록 내보내기</button></div><div class="storage-block"><h3>백업에서 가져오기</h3><p class="hint">이전 기록장의 JSON 파일도 읽을 수 있습니다. 파일을 고르면 복원할 내용을 먼저 보여드립니다.</p><label class="file-label">백업 파일 선택<input class="visually-hidden" type="file" id="import" accept=".json,application/json"></label><div id="restore-area"></div></div><div class="storage-block"><h3>직전 저장 상태</h3><p class="hint">바로 전 저장으로 돌아갑니다. 복원 시 현재 기록도 파일로 내려받습니다.</p><button id="previous">직전 상태 확인</button></div><div class="storage-block"><h3>오래 보관하기</h3><p class="hint">브라우저 데이터를 지우면 기록도 지워집니다. 중요한 기록은 파일로도 보관해주세요.</p><button id="persistent">브라우저에 보관 요청</button><p class="hint" id="persistent-status"></p></div>`);
+  openModal('기록 보관함',`<p class="hint">책 ${s.books}권 · 문장 ${s.entries}개 · 질문 ${s.questions}개<br>생각 ${s.thoughts}개 · 슬라임에게 한 답 ${s.answers}개</p><p>기록은 이 기기의 브라우저에 저장됩니다.<br>휴대폰과 PC 사이에 자동으로 공유되지는 않습니다.</p><div class="storage-block"><h3>슬라임이 기록 읽기</h3><p class="hint">켜면 내가 쓴 <b>생각, 슬라임에게 한 답, 책 문장에 단 내 생각</b>을 AI(Anthropic Claude)에게 보내 주제어를 붙입니다. 책에서 옮겨 적은 문장은 보내지 않습니다. 중계소는 글을 저장하지 않고, 주제어는 이 기기에만 남습니다. 언제든 끌 수 있습니다.</p><button id="ai-toggle" class="${state.profile.aiConsentAt ? '' : 'primary'}">${state.profile.aiConsentAt ? '끄기' : '켜기'}</button><p class="hint" id="ai-status">${aiStatus()}</p></div><div class="storage-block"><h3>슬라임</h3><p class="hint">이름과 말투를 고칩니다.</p><button id="cat-profile">슬라임 설정</button></div><div class="storage-block"><h3>파일로 남겨두기</h3><p class="hint">직접 올린 표지 사진까지 포함해 내려받습니다. 검색으로 연결한 표지는 주소가 저장되어 인터넷 연결이 필요합니다.</p><button class="primary" id="export">전체 기록 내보내기</button></div><div class="storage-block"><h3>백업에서 가져오기</h3><p class="hint">이전 기록장의 JSON 파일도 읽을 수 있습니다. 파일을 고르면 복원할 내용을 먼저 보여드립니다.</p><label class="file-label">백업 파일 선택<input class="visually-hidden" type="file" id="import" accept=".json,application/json"></label><div id="restore-area"></div></div><div class="storage-block"><h3>직전 저장 상태</h3><p class="hint">바로 전 저장으로 돌아갑니다. 복원 시 현재 기록도 파일로 내려받습니다.</p><button id="previous">직전 상태 확인</button></div><div class="storage-block"><h3>오래 보관하기</h3><p class="hint">브라우저 데이터를 지우면 기록도 지워집니다. 중요한 기록은 파일로도 보관해주세요.</p><button id="persistent">브라우저에 보관 요청</button><p class="hint" id="persistent-status"></p></div>`);
   $('#cat-profile').onclick = () => profileEditor();
+  $('#ai-toggle').onclick = async () => {
+    const on = !state.profile.aiConsentAt;
+    if (await change(s => { s.profile.aiConsentAt = on ? now() : ''; }, on ? '슬라임이 기록을 읽기 시작합니다.' : '슬라임이 기록 읽기를 멈췄습니다.')) {
+      $('#ai-toggle').textContent = on ? '끄기' : '켜기'; $('#ai-toggle').classList.toggle('primary', !on); $('#ai-status').textContent = aiStatus();
+      if (on) { readBackoff = 0; await readRecords(); if ($('#ai-status')) $('#ai-status').textContent = aiStatus(); }
+    }
+  };
   $('#export').onclick = () => exportState();
   $('#import').onchange = async e => {
     const f = e.target.files[0]; if (!f) return;
@@ -388,6 +457,7 @@ async function init() {
     db = await openStore(); const loaded = await load(db); state = loaded.state; revision = loaded.revision; ready = true;
     // 2026-10-10 슬라임의 질문에 답한 '쇼츠볼때'가 생각 탭에 잘못 들어갔던 것 한 건만 지웁니다 (사용자 요청)
     const stray = state.thoughts.find(t => t.text.replace(/\s/g, '') === '쇼츠볼때' && (t.createdAt || '').startsWith('2026-10-10'));
+    setTimeout(readRecords, 1500); window.addEventListener('online', () => { readBackoff = 0; readRecords(); });
     if (stray) await change(s => { s.thoughts = s.thoughts.filter(t => t.id !== stray.id); }, '');
     render(); status('이 브라우저에 저장됨');
     if (loaded.migrated || loaded.upgraded) notice('이전 기록을 모두 가져왔습니다. 원본 데이터도 그대로 보관했습니다.');

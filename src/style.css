@@ -280,3 +280,7 @@ body.night .ask-fab{background:#3b3550;border-color:#5a5275;box-shadow:0 5px 0 #
 }
 body[data-page=home] #toast{bottom:calc(96px + env(safe-area-inset-bottom))}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{transition:none!important;scroll-behavior:auto!important}}
+
+/* 주제어 */
+.tag-line{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 0}
+.tag-line span{font:400 12px/1.6 var(--head);color:var(--mint-deep);background:var(--mint-pale);border-radius:999px;padding:1px 9px}
