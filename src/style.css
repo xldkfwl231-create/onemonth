@@ -341,3 +341,52 @@ body.night .home-name,body.night .home-day{background:#3b3550;border-color:#5a52
 body.night .home-name span,body.night .home-day{color:#bdb4e0}
 body.night .home-name svg{background:#56497a}
 body.night .home-day svg{color:#ffd98a}
+
+/* ── 토큰 알림 ── */
+#usage-pill{position:fixed;left:50%;bottom:calc(92px + env(safe-area-inset-bottom));transform:translate(-50%,8px);z-index:90;max-width:calc(100% - 28px);width:max-content;padding:6px 13px;border-radius:999px;background:rgba(74,60,49,.82);color:#fff6ea;font:400 12px/1.4 var(--body);opacity:0;transition:opacity .3s,transform .3s;pointer-events:none;text-align:center}
+#usage-pill.show{opacity:1;transform:translate(-50%,0)}
+.usage-total{display:flex;align-items:baseline;gap:8px;margin-bottom:4px}
+.usage-total b{font:400 28px var(--head);font-variant-numeric:tabular-nums}
+.usage-total span{color:var(--muted);font-size:13px}
+.usage-table{overflow-x:auto;margin:6px 0 4px}
+.usage-table table{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
+.usage-table th,.usage-table td{text-align:left;padding:7px 6px;border-bottom:2px dotted var(--line);white-space:nowrap}
+.usage-table thead th{font:400 11.5px var(--head);color:var(--muted)}
+.usage-table td{text-align:right}.usage-table tbody th{font-weight:400}
+
+/* ── 이야기 ── */
+.talk-list{display:flex;flex-direction:column;gap:12px}
+.talk-item{display:flex;flex-direction:column;gap:3px;background:var(--surface);border:3px solid var(--line);border-radius:var(--r);padding:14px 16px;box-shadow:var(--pop) var(--line)}
+.talk-item .status-tag{align-self:flex-start}
+.talk-item b{font:400 17px/1.4 var(--head);overflow-wrap:anywhere}
+.talk-item small{color:var(--muted);font-size:12.5px;overflow-wrap:anywhere}
+.talk{padding-bottom:110px}
+.talk-head{display:flex;justify-content:space-between;align-items:center}
+.talk-head .back{margin:0}
+.talk-title{font-size:22px;margin:4px 0 14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.talk-log{display:flex;flex-direction:column;gap:12px}
+.talk-msg{display:flex;gap:8px;align-items:flex-end;max-width:88%}
+.talk-msg p{margin:0;padding:10px 14px;border-radius:18px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:15px;line-height:1.6}
+.talk-msg.slime svg{width:30px;height:30px;flex:0 0 30px;background:var(--peach);border-radius:50%;padding:2px}
+.talk-msg.slime p{background:var(--surface);border:3px solid var(--mint-line);border-bottom-left-radius:6px}
+.talk-msg.me{align-self:flex-end}
+.talk-msg.me p{background:var(--mint);color:#1f3d27;border-bottom-right-radius:6px}
+.typing p{display:flex;gap:4px;padding:14px 16px}
+.typing i{width:7px;height:7px;border-radius:50%;background:var(--mint-deep);animation:typing 1s infinite ease-in-out}
+.typing i:nth-child(2){animation-delay:.15s}.typing i:nth-child(3){animation-delay:.3s}
+@keyframes typing{0%,100%{opacity:.3;transform:translateY(0)}50%{opacity:1;transform:translateY(-3px)}}
+.talk-error{background:#fde8e4;border:3px solid #f3c6bd;border-radius:var(--r-s);padding:12px 14px}
+.talk-error p{margin:0 0 8px;font-size:13.5px;color:var(--danger)}
+.talk-form{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(92px + env(safe-area-inset-bottom));z-index:4;width:min(calc(100% - 28px),700px);display:flex;gap:8px;align-items:flex-end;padding:8px;background:var(--surface);border:3px solid var(--line);border-radius:24px;box-shadow:0 5px 0 var(--line)}
+.talk-form textarea{min-height:44px;max-height:140px;resize:none;border:0;padding:10px 12px;background:transparent;line-height:1.5}
+.talk-form textarea:focus{border:0}
+.talk-form button{flex:0 0 auto;width:46px;min-height:46px;padding:0;display:grid;place-items:center}
+.talk-form button svg{width:22px;height:22px}
+.talk-form.off{align-items:center;justify-content:space-between;padding:12px 16px;font-size:13.5px}
+.talk-form.off p{margin:0}
+body[data-page=talk] #usage-pill{bottom:calc(166px + env(safe-area-inset-bottom))}
+.keep-list{display:flex;flex-direction:column;gap:8px;max-height:50vh;overflow:auto}
+.keep-item{display:flex;gap:10px;align-items:flex-start;margin:0;padding:10px 12px;border:3px solid var(--line);border-radius:var(--r-s);background:var(--surface);color:var(--ink);font-size:14.5px;cursor:pointer}
+.keep-item input{width:20px;height:20px;min-height:0;margin-top:2px;flex:0 0 auto;accent-color:var(--mint-deep)}
+.keep-item:has(input:checked){border-color:var(--mint-deep);background:var(--mint-pale)}
+body[data-page=talk] #toast{bottom:calc(170px + env(safe-area-inset-bottom))}

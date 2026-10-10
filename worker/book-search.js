@@ -9,6 +9,7 @@
  * POST /ai/tags          → 기록마다 주제어 1~3개. { items: [{ id, text }], known: [주제어] } → { items: [{ id, tags }] }
  * POST /ai/reflect       → 하루 한 번: '그땐/지금은/그사이' 말 몇 줄과 오늘의 질문 하나
  *                          { name, tone, today, items: [{ id, date, kind, text, tags }] } → { lines: [{ text, ids }], question }
+ * POST /ai/chat          → 슬라임과 이야기(토론). { name, tone, topic, messages: [{ role, text }] } → { reply }
  * GET  /ai/health        → 열쇠가 들어 있는지만 알려 줌 (열쇠 값은 절대 내보내지 않음)
  *
  * 이 중계소는 기록을 저장하지 않습니다. 받은 글을 AI에 넘기고 답만 돌려줍니다.
@@ -48,6 +49,12 @@ export default {
       if (!ALLOWED.includes(origin)) return json({ error: '허용되지 않은 주소입니다' }, 403);
       if (!env.ANTHROPIC_KEY) return json({ error: 'ANTHROPIC_KEY가 설정되지 않았습니다' }, 503);
       return tags(request, env, json);
+    }
+    if (path === '/ai/chat') {
+      if (request.method !== 'POST') return json({ error: 'POST만 받습니다' }, 405);
+      if (!ALLOWED.includes(origin)) return json({ error: '허용되지 않은 주소입니다' }, 403);
+      if (!env.ANTHROPIC_KEY) return json({ error: 'ANTHROPIC_KEY가 설정되지 않았습니다' }, 503);
+      return chat(request, env, json);
     }
     if (path === '/ai/reflect') {
       if (request.method !== 'POST') return json({ error: 'POST만 받습니다' }, 405);
@@ -135,13 +142,13 @@ async function tags(request, env, json) {
 }
 
 // ── AI 부르기 (공통) ───────────────────────────────────────────
-async function askClaude(env, { system, user, schema, effort = 'low', maxTokens = 4000 }) {
+async function askClaude(env, { system, user, messages, schema, effort = 'low', maxTokens = 4000 }) {
   let res;
   try {
     res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'x-api-key': env.ANTHROPIC_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-      body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, system, messages: [{ role: 'user', content: user }], output_config: { effort, format: { type: 'json_schema', schema } } }),
+      body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, system, messages: messages || [{ role: 'user', content: user }], output_config: schema ? { effort, format: { type: 'json_schema', schema } } : { effort } }),
     });
   } catch { return { error: ['AI 서버에 닿지 못했습니다', 502] }; }
   if (!res.ok) return { error: ['AI 요청 실패 ' + res.status, 502] };
@@ -149,6 +156,7 @@ async function askClaude(env, { system, user, schema, effort = 'low', maxTokens 
   if (data.stop_reason === 'refusal') return { error: ['AI가 이 기록을 처리하지 않았습니다', 422] };
   if (data.stop_reason === 'max_tokens') return { error: ['한 번에 너무 많이 보냈습니다', 413] };
   const text = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
+  if (!schema) return { text, usage: data.usage ? { input: data.usage.input_tokens, output: data.usage.output_tokens } : undefined };
   try { return { out: JSON.parse(text), usage: data.usage ? { input: data.usage.input_tokens, output: data.usage.output_tokens } : undefined }; }
   catch { return { error: ['AI 답을 읽지 못했습니다', 502] }; }
 }
@@ -211,6 +219,56 @@ async function reflect(request, env, json) {
     .slice(0, 4);
   const question = typeof r.out.question === 'string' ? r.out.question.trim().slice(0, 80) : '';
   return json({ lines, question, model: MODEL, usage: r.usage });
+}
+
+// ── 슬라임과 이야기 (토론) ──────────────────────────────────────
+const MAX_TURNS = 40, MAX_TURN_TEXT = 1500;
+async function chat(request, env, json) {
+  let body;
+  try { body = await request.json(); } catch { return json({ error: '형식이 올바르지 않습니다' }, 400); }
+  const msgs = Array.isArray(body?.messages) ? body.messages.slice(-MAX_TURNS) : null;
+  if (!msgs || !msgs.length) return json({ error: '대화가 비어 있습니다' }, 400);
+  const clean = [];
+  for (const m of msgs) {
+    if (!['user', 'assistant'].includes(m?.role) || typeof m.text !== 'string' || !m.text.trim()) return json({ error: '대화 형식이 올바르지 않습니다' }, 400);
+    const last = clean[clean.length - 1];
+    if (last && last.role === m.role) last.content += '\n\n' + m.text.slice(0, MAX_TURN_TEXT);   // 같은 쪽 말이 이어지면 합침
+    else clean.push({ role: m.role, content: m.text.slice(0, MAX_TURN_TEXT) });
+  }
+  while (clean.length && clean[0].role !== 'user') clean.shift();
+  if (!clean.length || clean[clean.length - 1].role !== 'user') return json({ error: '마지막 말은 사람이 해야 합니다' }, 400);
+
+  const name = typeof body.name === 'string' && body.name.trim() ? body.name.trim().slice(0, 30) : '슬라임';
+  const tone = body.tone === 'you' ? 'you' : 'we';
+  const t = body.topic && typeof body.topic === 'object' ? body.topic : {};
+  const topic = {
+    kind: ['book', 'thought', 'free'].includes(t.kind) ? t.kind : 'free',
+    title: typeof t.title === 'string' ? t.title.slice(0, 200) : '',
+    author: typeof t.author === 'string' ? t.author.slice(0, 100) : '',
+    notes: (Array.isArray(t.notes) ? t.notes : []).filter(n => typeof n === 'string').slice(0, 20).map(n => n.slice(0, 400)),
+  };
+  const about = topic.kind === 'book' ? `책 『${topic.title}』${topic.author ? `(${topic.author})` : ''}` : topic.kind === 'thought' ? '이 사람이 적어 둔 생각 하나' : '이 사람이 꺼내는 이야기';
+  const system = [
+    `당신은 "${name}"라는 이름의 작은 슬라임입니다. 이 사람이 적는 기록을 오래 지켜봐 온 친구이고, 지금은 ${about}에 대해 함께 이야기합니다.`,
+    '',
+    '대화 방식:',
+    '- 이 사람이 먼저 꺼낸 질문이나 생각을 함께 깊게 들여다보는 대화 상대입니다. 토론하듯 다른 관점이나 반대쪽 생각도 꺼내 보되, 강요하거나 가르치려 들지 마세요.',
+    '- 생각과 의견에 대해서는 솔직하게 말해도 됩니다. 하지만 이 사람 자체를 평가하거나 진단하지는 마세요. ("너는 ~한 사람이야" 금지)',
+    '- 짧게. 2~4문장. 다정한 반말.',
+    tone === 'we' ? '- 당신과 이 사람은 하나라서 이 사람을 "우리"라고 부르기도 합니다.' : '- 이 사람을 "너"라고 부르세요.',
+    '- 끝에 질문 하나로 이어 가도 좋지만 매번 그럴 필요는 없습니다.',
+    '- 책 내용을 잘 모르거나 확실하지 않으면 아는 척하지 말고, 이 사람의 메모와 말을 기준으로 이야기하세요.',
+    '- 건강·법률·돈처럼 전문 판단이 필요한 이야기는 전문가에게 묻기를 권하세요.',
+    '- 마크다운 기호(#, *, -)를 쓰지 말고 말하듯 쓰세요.',
+    '',
+    '배경 (이 사람이 직접 적은 것):',
+    JSON.stringify(topic),
+  ].join('\n');
+  const r = await askClaude(env, { system, messages: clean, effort: 'medium', maxTokens: 3000 });
+  if (r.error) return json({ error: r.error[0] }, r.error[1]);
+  const reply = (r.text || '').trim().slice(0, 1500);
+  if (!reply) return json({ error: 'AI 답이 비어 있습니다' }, 502);
+  return json({ reply, model: MODEL, usage: r.usage });
 }
 
 // ── 책 검색 (카카오) ────────────────────────────────────────────

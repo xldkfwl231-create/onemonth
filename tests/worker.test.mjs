@@ -74,3 +74,26 @@ test('reflect: needs at least 3 records and an allowed site', async () => {
   assert.equal((await call({ items: [{ id: 'a', text: 'x' }] }, { path: '/ai/reflect' })).status, 400);
   assert.equal((await call({ items: [1, 2, 3].map(i => ({ id: 'a' + i, text: 'x' })) }, { path: '/ai/reflect', origin: 'https://evil.example' })).status, 403);
 });
+
+test('chat: sends the conversation as turns, merges same-side lines, returns the reply', async () => {
+  let body;
+  fakeAI({ stop_reason: 'end_turn', content: [{ type: 'thinking', thinking: '' }, { type: 'text', text: '  그 문장에서 "관찰"이 걸렸구나. 판단 없이 본다는 게 우리한텐 어떤 느낌이었어?  ' }], usage: { input_tokens: 400, output_tokens: 60 } },
+    (url, init) => { body = JSON.parse(init.body); });
+  const res = await call({ name: '말랑', tone: 'we', topic: { kind: 'book', title: '어떻게 살아낼 것인가', author: '짐 콜린스', notes: ['해 보자. 판단 없이.'] },
+    messages: [{ role: 'assistant', text: '어떤 게 마음에 남았어?' }, { role: 'user', text: '관찰하라는 말' }, { role: 'user', text: '그게 어렵더라' }] }, { path: '/ai/chat' });
+  assert.equal(res.status, 200);
+  const out = await res.json();
+  assert.match(out.reply, /^그 문장에서/);
+  assert.deepEqual(out.usage, { input: 400, output: 60 });
+  assert.equal(body.messages.length, 1);                       // 맨 앞 슬라임 말은 빼고, 이어진 사람 말은 하나로
+  assert.equal(body.messages[0].content, '관찰하라는 말\n\n그게 어렵더라');
+  assert.ok(!body.output_config.format);
+  assert.match(body.system, /어떻게 살아낼 것인가/);
+});
+
+test('chat: the last turn must be the person, and bad roles are refused', async () => {
+  fakeAI({});
+  assert.equal((await call({ messages: [{ role: 'user', text: 'a' }, { role: 'assistant', text: 'b' }] }, { path: '/ai/chat' })).status, 400);
+  assert.equal((await call({ messages: [{ role: 'system', text: 'a' }] }, { path: '/ai/chat' })).status, 400);
+  assert.equal((await call({ messages: [] }, { path: '/ai/chat' })).status, 400);
+});

@@ -2,7 +2,9 @@ export const VERSION = 3;
 export const uid = () => crypto.randomUUID();
 export const now = () => new Date().toISOString();
 export const emptyProfile = () => ({ catName: '', tone: 'we', aiConsentAt: '' });
-export const emptyState = () => ({ version: VERSION, profile: emptyProfile(), books: [], thoughts: [], answers: [], moments: [], readings: {}, insights: null, extraScales: [] });
+// AI 사용량 — 요청 종류별 호출 수와 토큰
+export const emptyUsage = () => ({ since: '', calls: 0, input: 0, output: 0, byKind: {} });
+export const emptyState = () => ({ version: VERSION, profile: emptyProfile(), books: [], thoughts: [], answers: [], moments: [], readings: {}, insights: null, chats: [], usage: emptyUsage(), extraScales: [] });
 const object = v => v && typeof v === 'object' && !Array.isArray(v);
 function text(v, label, max = 100000, optional = false) {
   if (v == null && optional) return '';
@@ -68,10 +70,20 @@ export function normalize(input) {
     ? { date: ins.date.slice(0, 10), at: text(ins.at, '날짜', 100, true), question: ins.question.slice(0, 120), lines: ins.lines.filter(l => object(l) && typeof l.text === 'string').slice(0, 6).map(l => ({ text: l.text.slice(0, 200), ids: Array.isArray(l.ids) ? l.ids.filter(x => typeof x === 'string').slice(0, 5) : [] })) }
     : null;
   const extraScales = v3 && Array.isArray(p.extraScales) ? structuredClone(p.extraScales) : [];
-  return { version: VERSION, profile, books, thoughts, answers, moments, readings, insights, extraScales };
+  // 슬라임과 나눈 이야기
+  const chats = !v3 ? [] : list(p.chats, '이야기', true).map(c => {
+    row(c); const t = object(c.topic) ? c.topic : {};
+    return { id: id(c.id), createdAt: text(c.createdAt, '날짜', 100, true),
+      topic: { kind: ['book', 'thought', 'free'].includes(t.kind) ? t.kind : 'free', ref: text(t.ref, '주제', 100, true), title: text(t.title, '주제', 500, true) },
+      messages: list(c.messages, '대화', true).slice(-500).map(m => { row(m); if (!['user', 'assistant'].includes(m.role)) throw new Error('대화 형식이 올바르지 않습니다.'); return { role: m.role, text: text(m.text, '대화', 5000), at: text(m.at, '날짜', 100, true) }; }) };
+  });
+  const num = v => Number.isFinite(v) && v >= 0 ? Math.round(v) : 0;
+  const u = v3 && object(p.usage) ? p.usage : {}, usage = { since: typeof u.since === 'string' ? u.since.slice(0, 40) : '', calls: num(u.calls), input: num(u.input), output: num(u.output), byKind: {} };
+  if (object(u.byKind)) for (const [k, v] of Object.entries(u.byKind).slice(0, 10)) if (object(v)) usage.byKind[k.slice(0, 20)] = { calls: num(v.calls), input: num(v.input), output: num(v.output) };
+  return { version: VERSION, profile, books, thoughts, answers, moments, readings, insights, chats, usage, extraScales };
 }
 export function backup(state) { return JSON.stringify({ format: 'reading-notebook', exportedAt: now(), data: normalize(state) }, null, 2); }
-export function stats(s) { return { books: s.books.length, entries: s.books.reduce((n, b) => n + b.entries.length, 0), questions: s.books.reduce((n, b) => n + b.questions.length, 0), thoughts: s.thoughts.length, answers: s.answers.length, moments: s.moments.length }; }
+export function stats(s) { return { books: s.books.length, entries: s.books.reduce((n, b) => n + b.entries.length, 0), questions: s.books.reduce((n, b) => n + b.questions.length, 0), thoughts: s.thoughts.length, answers: s.answers.length, chats: (s.chats || []).length, moments: s.moments.length }; }
 export function matchesBook(b, query) {
   const q = query.trim().toLocaleLowerCase();
   return !q || [b.title, b.author, b.publisher, b.isbn, ...b.entries.flatMap(e => [e.text, e.note, e.page]), ...b.questions.flatMap(e => [e.text, e.answer])].some(t => t.toLocaleLowerCase().includes(q));

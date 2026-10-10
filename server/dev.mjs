@@ -18,7 +18,7 @@ const server = http.createServer(async (req,res) => {
       res.writeHead(200,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});
       res.end(JSON.stringify({books:data.documents.map(d => ({title:d.title,author:d.authors.join(', '),publisher:d.publisher,isbn:d.isbn.split(' ').filter(Boolean).at(-1) || '',cover:d.thumbnail}))})); return;
     }
-    if (url.pathname === '/src/config.js' && process.env.KAKAO_REST_API_KEY) { res.writeHead(200,{'Content-Type':mime['.js'],'Cache-Control':'no-store'}); res.end('export const BOOK_SEARCH_ENDPOINT = "/api/books"; export const AI_ENDPOINT = "https://book-search.dmsxor111.workers.dev/ai/tags"; export const AI_REFLECT_ENDPOINT = "https://book-search.dmsxor111.workers.dev/ai/reflect";'); return; }
+    if (url.pathname === '/src/config.js' && process.env.KAKAO_REST_API_KEY) { res.writeHead(200,{'Content-Type':mime['.js'],'Cache-Control':'no-store'}); res.end('export const BOOK_SEARCH_ENDPOINT = "/api/books"; export const AI_ENDPOINT = "https://book-search.dmsxor111.workers.dev/ai/tags"; export const AI_REFLECT_ENDPOINT = "https://book-search.dmsxor111.workers.dev/ai/reflect"; export const AI_CHAT_ENDPOINT = "https://book-search.dmsxor111.workers.dev/ai/chat";'); return; }
     const relative = decodeURIComponent(url.pathname).replace(/^\/+/, '') || 'index.html';
     // Expose only app assets, not .git, keys, tests, or the local server source.
     if (!/^(index\.html|legacy-records\.html|manifest\.json|icon\.svg|icon-(192|512|maskable-512)\.png|apple-touch-icon\.png|sw\.js|src\/[a-z-]+\.(js|css)|vendor\/[a-z.-]+\.js|assets\/[a-z-]+\.webp)$/.test(relative)) { res.writeHead(404); res.end(); return; }
