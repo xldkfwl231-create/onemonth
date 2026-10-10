@@ -38,6 +38,8 @@ export function normalize(input) {
     if (!value || seen.has(value)) throw new Error('중복되거나 비어 있는 기록 ID입니다.');
     seen.add(value); return value;
   }
+  // 이야기 끝에 기록 아래 덧붙인 말 (문장·생각)
+  const more = v => list(v, '덧붙인 말', true).slice(-500).map(m => { row(m); return { id: id(m.id), text: text(m.text, '덧붙인 말'), createdAt: text(m.createdAt, '날짜', 100, true), chat: text(m.chat, '이야기', 100, true) }; });
   const books = list(p.books, '책', !modern).map(b => {
     row(b);
     const entries = modern ? list(b.entries, '문장') : (b.e != null ? list(b.e, '문장') : b.l ? [{ l: b.l, d: b.d || '' }] : []);
@@ -50,11 +52,11 @@ export function normalize(input) {
       isbn: text(b.isbn, 'ISBN', 100, true), cover: modern ? safeCover(b.cover) : '',
       color: ['forest', 'clay', 'blue', 'sand'].includes(b.color) ? b.color : 'forest', status,
       createdAt: text(modern ? b.createdAt : b.s || b.d, '날짜', 100, true), finishedAt: text(b.finishedAt, '완독일', 100, true),
-      entries: entries.map(e => { row(e); return { id: id(e.id), text: text(modern ? e.text : e.l, '문장'), page: text(e.page, '페이지', 50, true), note: text(e.note, '내 생각', 100000, true), createdAt: text(modern ? e.createdAt : e.d, '날짜', 100, true) }; }),
-      questions: list(b.questions, '질문', !modern).map(q => { row(q); return { id: id(q.id), text: text(q.text, '질문'), answer: text(q.answer, '답변', 100000, true), createdAt: text(q.createdAt, '날짜', 100, true), answeredAt: text(q.answeredAt, '답변일', 100, true) }; })
+      entries: entries.map(e => { row(e); return { id: id(e.id), text: text(modern ? e.text : e.l, '문장'), page: text(e.page, '페이지', 50, true), note: text(e.note, '메모', 100000, true), more: more(e.more), createdAt: text(modern ? e.createdAt : e.d, '날짜', 100, true) }; }),
+      questions: list(b.questions, '질문', !modern).map(q => { row(q); return { id: id(q.id), text: text(q.text, '질문'), answer: text(q.answer, '답변', 100000, true), createdAt: text(q.createdAt, '날짜', 100, true), answeredAt: text(q.answeredAt, '답변일', 100, true), from: text(q.from, '문장', 100, true), history: list(q.history, '예전 답', true).slice(-100).map(h => { row(h); return { text: text(h.text, '예전 답'), at: text(h.at, '날짜', 100, true) }; }) }; })
     };
   });
-  const thoughts = list(p.thoughts, '생각', !modern).map(t => { row(t); return { id: id(t.id), text: text(modern ? t.text : t.t, '생각'), createdAt: text(modern ? t.createdAt : t.d, '날짜', 100, true) }; });
+  const thoughts = list(p.thoughts, '생각', !modern).map(t => { row(t); return { id: id(t.id), text: text(modern ? t.text : t.t, '생각'), more: more(t.more), createdAt: text(modern ? t.createdAt : t.d, '날짜', 100, true) }; });
   // 버전 2까지의 '다녀온 자리'는 장소가 붙은 순간으로 옮깁니다.
   const trips = v3 ? [] : list(p.trips, '여행', true).map(t => { row(t); return { id: id(t.id), createdAt: text(t.createdAt, '날짜', 100, true), text: text(modern ? t.text : t.n, '여행 기록'), energy: '', with: '', chosen: '', place: text(modern ? t.place : t.p, '장소', 500), from: 'self' }; });
   const pick = (v, allowed, label) => { if (v == null || v === '') return ''; if (!allowed.includes(v)) throw new Error(`${label} 값이 올바르지 않습니다.`); return v; };
@@ -87,7 +89,7 @@ export function backup(state) { return JSON.stringify({ format: 'reading-noteboo
 export function stats(s) { return { books: s.books.length, entries: s.books.reduce((n, b) => n + b.entries.length, 0), questions: s.books.reduce((n, b) => n + b.questions.length, 0), thoughts: s.thoughts.length, answers: s.answers.length, chats: (s.chats || []).length, moments: s.moments.length }; }
 export function matchesBook(b, query) {
   const q = query.trim().toLocaleLowerCase();
-  return !q || [b.title, b.author, b.publisher, b.isbn, ...b.entries.flatMap(e => [e.text, e.note, e.page]), ...b.questions.flatMap(e => [e.text, e.answer])].some(t => t.toLocaleLowerCase().includes(q));
+  return !q || [b.title, b.author, b.publisher, b.isbn, ...b.entries.flatMap(e => [e.text, e.note, e.page, ...(e.more || []).map(m => m.text)]), ...b.questions.flatMap(e => [e.text, e.answer, ...(e.history || []).map(h => h.text)])].some(t => t.toLocaleLowerCase().includes(q));
 }
 // 같은 날(이 기기 시간 기준) 남긴 기록을 한 묶음으로. 이전 기록의 '8/1'은 그대로 씁니다.
 export function dayKey(value) {

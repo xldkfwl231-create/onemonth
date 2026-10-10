@@ -9,7 +9,7 @@ test('legacy migration preserves every record, original dates and original input
 });
 test('old single-line book migrates',() => { const s = normalize({books:[{t:'책',l:'문장',d:'1/2'}]}); assert.equal(s.books[0].entries[0].text,'문장'); });
 test('complete backup round trip includes uploaded covers, answers, notes and years',() => {
-  const s = normalize(old()); s.books[0].cover = 'data:image/jpeg;base64,YQ=='; s.books[0].entries[0].note='내 생각'; s.books[0].questions.push({id:crypto.randomUUID(),text:'왜?',answer:'그래서',createdAt:'2026-09-14T12:00:00Z',answeredAt:'2026-09-14T13:00:00Z'});
+  const s = normalize(old()); s.books[0].cover = 'data:image/jpeg;base64,YQ=='; s.books[0].entries[0].note='내 생각'; s.books[0].questions.push({id:crypto.randomUUID(),text:'왜?',answer:'그래서',createdAt:'2026-09-14T12:00:00Z',answeredAt:'2026-09-14T13:00:00Z',from:'',history:[]});
   assert.deepEqual(normalize(JSON.parse(backup(s))),s);
 });
 test('malformed restores are rejected instead of wiping existing state',() => {
@@ -72,4 +72,19 @@ test('chats and usage survive a backup round trip, and broken ones are refused o
   assert.deepEqual(normalize(JSON.parse(backup(s))), s);
   const bad = structuredClone(s); bad.chats[0].messages[0].role = 'system'; assert.throws(() => normalize(bad));
   const weird = structuredClone(s); weird.usage = { calls: -5, input: 'lots' }; assert.deepEqual(normalize(weird).usage, { since: '', calls: 0, input: 0, output: 0, byKind: {} });
+});
+
+test('talk results stay with their record: added lines, earlier answers and the sentence a question came from', () => {
+  const s = normalize({ version: 3, profile: { catName: '', tone: 'we', aiConsentAt: '' },
+    books: [{ id: 'b', title: '책', status: 'reading', entries: [{ id: 'e', text: '문장', more: [{ id: 'm1', text: '이야기에서 덧붙임', createdAt: '2026-10-10T01:00:00Z', chat: 'c' }] }],
+      questions: [{ id: 'q', text: '왜?', answer: '지금은 이래', from: 'e', history: [{ text: '그땐 저랬다', at: '2026-10-01T01:00:00Z' }] }] }],
+    thoughts: [{ id: 't', text: '생각', more: [{ id: 'm2', text: '더 생각해 보니' }] }, { id: 't2', text: '옛 생각' }], answers: [], moments: [], chats: [] });
+  assert.equal(s.books[0].entries[0].more[0].chat, 'c');
+  assert.equal(s.books[0].questions[0].from, 'e');
+  assert.equal(s.books[0].questions[0].history[0].text, '그땐 저랬다');
+  assert.equal(s.thoughts[0].more[0].text, '더 생각해 보니');
+  assert.deepEqual(s.thoughts[1].more, []);
+  assert.deepEqual(normalize(JSON.parse(backup(s))), s);
+  assert.ok(matchesBook(s.books[0], '덧붙임') && matchesBook(s.books[0], '저랬다'));
+  assert.throws(() => normalize({ version: 3, books: [], thoughts: [{ id: 't', text: 'a', more: [{ id: 't', text: 'b' }] }], moments: [] }), /ID/);
 });
