@@ -135,7 +135,7 @@ function renderHome() {
     <h1 id="room-title">${esc(name || '나만의 슬라임')}</h1>
     <p class="cat-status">${status}</p>
     <div class="slime-stage" id="slime-stage"><div class="slime-say" id="slime-say" role="status" hidden></div></div>
-    <p class="hint stage-hint">톡 치면 출렁이고, 길게 누르면 눌리고, 잡아서 던지면 튕깁니다. 빈 데를 끌면 돌아갑니다.</p>
+    <p class="hint stage-hint">톡 치면 출렁, 잡아당기면 늘어나고, 세게 당겼다 놓으면 날아갑니다. 빈 데를 끌면 돌려 보고, 두 손가락으로 확대합니다.</p>
     <div id="home-bubble">${bubble()}</div>
     <div class="cat-actions"><button data-action="add-moment">＋ 순간 남기기</button><a class="text-link" href="#moments">남긴 순간 <span id="home-moments">${s.moments}</span> <span aria-hidden="true">›</span></a></div>
     <div id="home-current">${homeCurrent()}</div>

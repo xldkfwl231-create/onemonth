@@ -9,3 +9,6 @@ tests/artifacts/
 # 디자인 시안 — 캔버스 결과물과 출판사 표지 이미지는 저장소에 두지 않습니다
 design/reading-notebook.html
 design/cover-*.webp
+
+# 참고용 영상·캡처 — 용량이 커서 저장소에 두지 않습니다
+docs/ref/
