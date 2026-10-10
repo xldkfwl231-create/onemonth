@@ -74,7 +74,8 @@ export function normalize(input) {
   const chats = !v3 ? [] : list(p.chats, '이야기', true).map(c => {
     row(c); const t = object(c.topic) ? c.topic : {};
     return { id: id(c.id), createdAt: text(c.createdAt, '날짜', 100, true),
-      topic: { kind: ['book', 'thought', 'free'].includes(t.kind) ? t.kind : 'free', ref: text(t.ref, '주제', 100, true), title: text(t.title, '주제', 500, true) },
+      topic: { kind: ['book', 'entry', 'question', 'thought', 'free'].includes(t.kind) ? t.kind : 'free', ref: text(t.ref, '주제', 100, true), book: text(t.book, '주제', 100, true), title: text(t.title, '주제', 500, true) },
+      usage: { input: object(c.usage) && Number.isFinite(c.usage.input) && c.usage.input >= 0 ? Math.round(c.usage.input) : 0, output: object(c.usage) && Number.isFinite(c.usage.output) && c.usage.output >= 0 ? Math.round(c.usage.output) : 0 },
       messages: list(c.messages, '대화', true).slice(-500).map(m => { row(m); if (!['user', 'assistant'].includes(m.role)) throw new Error('대화 형식이 올바르지 않습니다.'); return { role: m.role, text: text(m.text, '대화', 5000), at: text(m.at, '날짜', 100, true) }; }) };
   });
   const num = v => Number.isFinite(v) && v >= 0 ? Math.round(v) : 0;

@@ -390,3 +390,50 @@ body[data-page=talk] #usage-pill{bottom:calc(166px + env(safe-area-inset-bottom)
 .keep-item input{width:20px;height:20px;min-height:0;margin-top:2px;flex:0 0 auto;accent-color:var(--mint-deep)}
 .keep-item:has(input:checked){border-color:var(--mint-deep);background:var(--mint-pale)}
 body[data-page=talk] #toast{bottom:calc(170px + env(safe-area-inset-bottom))}
+
+/* ── 이야기: PC에서는 세 칸 (목록 · 대화 · 배경) ─────────────── */
+.talk-side,.talk-ctx{display:none}
+.talk-desk{display:block}
+.ctx-book{display:flex;gap:12px;align-items:center;margin-bottom:14px}
+.ctx-book .cover{width:54px;flex:0 0 54px}
+.ctx-book b{display:block;font:400 16px/1.4 var(--head);overflow-wrap:anywhere}
+.ctx-book small{display:block;color:var(--muted);font-size:12px;margin-bottom:4px}
+.ctx-book .text-link{font-size:13px}
+.ctx-focus{background:var(--surface);border:3px solid var(--mint-line);border-radius:var(--r-s);padding:12px 14px;margin-bottom:14px}
+.ctx-focus.q{border-color:#c5d8ea}
+.ctx-focus .mark{display:block;font:400 30px/.6 var(--head);color:var(--mint-deep);margin:6px 0 2px}
+.ctx-focus.q .mark{color:var(--sky-ink);line-height:.9}
+.ctx-focus p{margin:0 0 6px;font:400 16px/1.6 var(--head);white-space:pre-wrap;overflow-wrap:anywhere}
+.ctx-focus small{color:var(--muted);font-size:12px}
+.talk-ctx h3{font-size:14px;color:var(--muted);margin:16px 0 8px}
+.ctx-list{display:flex;flex-direction:column;gap:6px}
+.ctx-item{display:block;width:100%;text-align:left;min-height:0;padding:9px 12px;border:2px solid var(--line);border-radius:12px;box-shadow:none;background:var(--surface);font:400 13.5px/1.5 var(--body);color:var(--ink);white-space:pre-wrap;overflow-wrap:anywhere}
+.ctx-item:hover{border-color:var(--mint)}
+.ctx-item:active{transform:none}
+.ctx-item small{display:block;font:400 11px var(--head);color:var(--muted);margin-bottom:2px}
+.ctx-usage{margin-top:18px;font-size:12px;color:var(--muted)}
+.talk-item.on{border-color:var(--mint-deep);background:var(--mint-pale);box-shadow:var(--pop) var(--mint-line)}
+
+@media (min-width:1000px){
+  body[data-page=talk] .shell{max-width:1360px}
+  body[data-page=talk] main{padding-bottom:0}
+  .talk-desk{display:grid;grid-template-columns:270px minmax(0,1fr) 320px;gap:22px;height:calc(100dvh - 150px - env(safe-area-inset-bottom));min-height:480px}
+  .talk-side,.talk-ctx{display:flex;flex-direction:column;min-height:0;overflow:auto;padding-right:4px}
+  .talk-side-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px}
+  .talk-side-head .back{margin:0}
+  .talk-side-head button{min-height:40px;padding:6px 14px;font-size:13px}
+  .talk-side .talk-item{padding:11px 13px;box-shadow:0 3px 0 var(--line)}
+  .talk-side .talk-item b{font-size:15px}
+  .talk-ctx{background:var(--peach);border-radius:var(--r);padding:16px}
+  .talk{display:flex;flex-direction:column;min-height:0;padding-bottom:0;background:var(--surface);border:3px solid var(--line);border-radius:var(--r);box-shadow:var(--pop) var(--line);overflow:hidden}
+  .talk-head{padding:12px 18px 8px;border-bottom:3px dotted var(--line);gap:10px}
+  .talk-back{display:none!important}
+  .talk-title{font-size:19px;margin:0;flex:1;min-width:0}
+  .talk-log{flex:1;min-height:0;overflow:auto;padding:18px 20px;background:var(--bg)}
+  .talk-msg{max-width:78%}
+  .talk-msg p{font-size:15.5px}
+  .talk-form,.talk-form.off{position:static;transform:none;width:auto;margin:0;border:0;border-top:3px solid var(--line);border-radius:0;box-shadow:none;padding:10px 12px}
+  .talk-form textarea{font-size:15.5px}
+  body[data-page=talk] #usage-pill{bottom:calc(96px + env(safe-area-inset-bottom))}
+  body[data-page=talk] #toast{bottom:calc(96px + env(safe-area-inset-bottom))}
+}

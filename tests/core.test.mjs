@@ -67,7 +67,7 @@ test('the slime asks today\'s own question when it has one, and bad insights are
 
 test('chats and usage survive a backup round trip, and broken ones are refused or zeroed', () => {
   const s = emptyState();
-  s.chats.push({ id: 'c1', createdAt: '2026-10-11T01:00:00.000Z', topic: { kind: 'book', ref: 'b1', title: '책' }, messages: [{ role: 'user', text: '관찰하라는 말', at: '' }, { role: 'assistant', text: '어떤 느낌이었어?', at: '' }] });
+  s.chats.push({ id: 'c1', createdAt: '2026-10-11T01:00:00.000Z', topic: { kind: 'entry', ref: 'e1', book: 'b1', title: '책' }, usage: { input: 400, output: 60 }, messages: [{ role: 'user', text: '관찰하라는 말', at: '' }, { role: 'assistant', text: '어떤 느낌이었어?', at: '' }] });
   s.usage = { since: '2026-10-11', calls: 2, input: 900, output: 80, byKind: { chat: { calls: 1, input: 400, output: 60 } } };
   assert.deepEqual(normalize(JSON.parse(backup(s))), s);
   const bad = structuredClone(s); bad.chats[0].messages[0].role = 'system'; assert.throws(() => normalize(bad));
