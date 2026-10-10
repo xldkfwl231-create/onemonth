@@ -78,11 +78,20 @@ export function mountSlime(container, { look = {}, onPoke = () => {}, reduced = 
   const body = new THREE.Mesh(geometry, material); body.castShadow = true;
   const group = new THREE.Group(); group.add(body); scene.add(group);
 
-  // 눈 두 개 — 표면 바로 바깥에 붙여서 젤리 너머로 일그러져 보이지 않게
+  // 얼굴: 눈 둘, 볼 둘, 입 하나 — 표면 바로 바깥에 붙여서 젤리 너머로 일그러져 보이지 않게
   const eyeMat = new THREE.MeshStandardMaterial({ color: 0x33302a, roughness: 0.35 });
-  const nearest = [-0.3, 0.3].map(x => { const y = 0.2, z = 0.95; let best = 0, d = Infinity; for (let i = 0; i < count; i++) { const dd = (rest[i * 3] - x) ** 2 + (rest[i * 3 + 1] - y) ** 2 + (rest[i * 3 + 2] - z) ** 2; if (dd < d) { d = dd; best = i; } } return best; });
-  const eyeRest = nearest.map(i => new THREE.Vector3(rest[i * 3], rest[i * 3 + 1], rest[i * 3 + 2]).multiplyScalar(1.045));
-  const eyes = eyeRest.map(p => { const e = new THREE.Mesh(new THREE.SphereGeometry(0.075, 20, 14), eyeMat); e.position.copy(p); e.lookAt(p.clone().multiplyScalar(2)); e.scale.z = 0.45; group.add(e); return e; });
+  const cheekMat = new THREE.MeshStandardMaterial({ color: 0xf2a39b, roughness: 0.9, transparent: true, opacity: 0.55 });
+  const nearestTo = (x, y, z) => { let best = 0, d = Infinity; for (let i = 0; i < count; i++) { const dd = (rest[i * 3] - x) ** 2 + (rest[i * 3 + 1] - y) ** 2 + (rest[i * 3 + 2] - z) ** 2; if (dd < d) { d = dd; best = i; } } return best; };
+  function sticker(mesh, x, y, z, lift = 1.045) {
+    const i = nearestTo(x, y, z), r = new THREE.Vector3(rest[i * 3], rest[i * 3 + 1], rest[i * 3 + 2]).multiplyScalar(lift);
+    mesh.position.copy(r); mesh.lookAt(r.clone().multiplyScalar(2)); group.add(mesh);
+    return { mesh, i, r };
+  }
+  const eyes = [-0.3, 0.3].map(x => { const e = new THREE.Mesh(new THREE.SphereGeometry(0.075, 20, 14), eyeMat); e.scale.z = 0.45; return sticker(e, x, 0.2, 0.95); });
+  const cheeks = [-0.5, 0.5].map(x => sticker(new THREE.Mesh(new THREE.CircleGeometry(0.075, 20), cheekMat), x, 0.06, 0.86, 1.02));
+  const mouth = sticker(new THREE.Mesh(new THREE.TorusGeometry(0.075, 0.016, 8, 18, Math.PI), eyeMat), 0, 0.04, 0.98, 1.03);
+  mouth.mesh.rotateZ(Math.PI);                                   // 웃는 입이 되도록 호를 아래로
+  const stickers = [...eyes, ...cheeks, mouth];
 
   // ── 물리 상태 ──
   // lean: 윗부분이 옆으로 기우는 젤리 흔들림 / pull: 잡아당긴 만큼 늘어남 / sq: 세 축 눌림 / off: 표면의 잔물결
@@ -257,12 +266,12 @@ export function mountSlime(container, { look = {}, onPoke = () => {}, reduced = 
     group.scale.set(BASE * sq[0], BASE * sy, BASE * sq[2]);
     group.quaternion.copy(tumble);
     group.position.set(at.x, FLOOR + 0.5 * BASE * sy + at.y, at.z);
-    // 눈: 흔들림과 늘어남을 따라감, 가끔 깜빡
-    for (let e = 0; e < 2; e++) {
-      const i = nearest[e], h = height[i], w = stretching ? wPull[i] : 0, r = eyeRest[e];
-      eyes[e].position.set(r.x + lean.x * h + pull.x * w + off[i * 3], r.y + pull.y * w + off[i * 3 + 1] - sag * h, r.z + lean.y * h + pull.z * w + off[i * 3 + 2]);
-      eyes[e].scale.y = blink > 0 ? 0.12 : 1;
+    // 얼굴: 흔들림과 늘어남을 따라감, 눈은 가끔 깜빡
+    for (const { mesh, i, r } of stickers) {
+      const h = height[i], w = stretching ? wPull[i] : 0;
+      mesh.position.set(r.x + lean.x * h + pull.x * w + off[i * 3], r.y + pull.y * w + off[i * 3 + 1] - sag * h, r.z + lean.y * h + pull.z * w + off[i * 3 + 2]);
     }
+    for (const e of eyes) e.mesh.scale.y = blink > 0 ? 0.12 : 1;
     blinkTimer -= dt; if (blinkTimer <= 0) { blink = 0.12; blinkTimer = 2.5 + Math.random() * 4; } if (blink > 0) blink -= dt;
     if (!reduced && !down && !flying) { idleTimer -= dt; if (idleTimer <= 0) { nudge(); idleTimer = 3.5 + Math.random() * 5; } }
   }
@@ -303,7 +312,7 @@ export function mountSlime(container, { look = {}, onPoke = () => {}, reduced = 
     },
     destroy() {
       running = false; renderer.setAnimationLoop(null); ro.disconnect(); document.removeEventListener('visibilitychange', onVisible);
-      geometry.dispose(); material.dispose(); eyeMat.dispose(); floor.geometry.dispose(); floor.material.dispose(); sun.shadow.map?.dispose();
+      geometry.dispose(); material.dispose(); eyeMat.dispose(); cheekMat.dispose(); floor.geometry.dispose(); floor.material.dispose(); sun.shadow.map?.dispose();
       scene.environment?.dispose(); renderer.dispose(); canvas.remove(); delete container.__slime;
     }
   };

@@ -3,7 +3,7 @@ import { mountSlime } from './slime.js';
 import { openStore, load, commit, previous } from './storage.js';
 import { BOOK_SEARCH_ENDPOINT } from './config.js';
 
-const BUILD = '1010d';   // 폰에서 어떤 판을 보고 있는지 확인용
+const BUILD = '1010e';   // 폰에서 어떤 판을 보고 있는지 확인용
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 let state = emptyState(), db, revision = 0, busy = false, ready = false;
@@ -38,7 +38,7 @@ function showError(message) {
   else notice(message);
 }
 function cover(b) {
-  return `<div class="cover ${esc(b.color || 'forest')}"><div class="cover-fallback" ${b.cover ? 'aria-hidden="true"' : ''}><b>${esc(b.title || '나의 책')}</b><span>READING NOTES</span></div>${b.cover ? `<img src="${esc(b.cover)}" alt="${esc(b.title)} 표지" loading="lazy" referrerpolicy="no-referrer">` : ''}</div>`;
+  return `<div class="cover ${esc(b.color || 'forest')}"><div class="cover-fallback" ${b.cover ? 'aria-hidden="true"' : ''}><b>${esc(b.title || '나의 책')}</b></div>${b.cover ? `<img src="${esc(b.cover)}" alt="${esc(b.title)} 표지" loading="lazy" referrerpolicy="no-referrer">` : ''}</div>`;
 }
 document.addEventListener('error', e => { if (e.target instanceof HTMLImageElement) { e.target.hidden = true; e.target.parentElement.querySelector('.cover-fallback')?.removeAttribute('aria-hidden'); } }, true);
 const empty = (title, message, action = '') => `<div class="empty"><div class="empty-illustration" aria-hidden="true"><i></i><i></i><i></i></div><h2>${title}</h2><p>${message}</p>${action}</div>`;
@@ -54,6 +54,7 @@ function render() {
   if (page === 'book') renderBook();
   else if (page === 'questions') renderQuestions();
   else if (page === 'thoughts') renderThoughts();
+  else if (page === 'answers') renderAnswers();
   else if (page === 'shelf') renderShelf();
   else renderHome();
 }
@@ -79,10 +80,11 @@ function skip(slot) { try { localStorage.setItem(`cat-skip:${todayKey()}`, JSON.
 function bubble() {
   if (!state.profile.catName) return `<div class="bubble"><p class="bubble-text">안녕. 나는 아직 이름이 없는 슬라임이야. 이름을 지어 줄래?</p><div class="bubble-actions"><button class="primary" data-action="profile">이름 지어 주기</button></div></div>`;
   const q = nextQuestion(state, new Date(), skipped());
-  if (!q) return `<div class="bubble done"><p class="bubble-text">${say(['오늘 물을 건 여기까지. 나머진 네가 적고 싶을 때.', '오늘 물을 건 여기까지야. 나머진 네가 적고 싶을 때.'])}</p></div>`;
+  const past = state.answers.length ? `<a class="text-link past-link" href="#answers">지난 답 ${state.answers.length} ›</a>` : '';
+  if (!q) return `<div class="bubble done"><p class="bubble-text">${say(['오늘 물을 건 여기까지. 나머진 네가 적고 싶을 때.', '오늘 물을 건 여기까지야. 나머진 네가 적고 싶을 때.'])}</p>${past}</div>`;
   const body = q.type === 'book'
     ? `<div class="bubble-actions"><button class="primary" data-action="cat-book" data-book="${esc(q.bookId)}">문장 남기기</button></div>`
-    : `<div class="bubble-actions"><button class="primary" data-action="cat-thought" data-prompt="${esc(q.text)}">적어 볼게</button></div>`;
+    : `<div class="bubble-actions"><button class="primary" data-action="cat-answer" data-prompt="${esc(q.text)}">답할게</button>${past}</div>`;
   return `<div class="bubble"><p class="bubble-slot">${esc(q.title)}</p><p class="bubble-text">${esc(q.text)}</p>${body}<button class="quiet skip-q" data-action="cat-skip" data-slot="${q.slot}">오늘은 넘어갈래</button></div>`;
 }
 // 슬라임이 가지고 놀 때 꺼내는 말. 지금은 지난 기록을 그대로 인용하고, 요약이 생기면 그걸로 바뀝니다.
@@ -90,6 +92,7 @@ function sayLines() {
   const quote = (createdAt, text) => `${dateLabel(createdAt)}에 이렇게 적었어. “${text.length > 70 ? text.slice(0, 70) + '…' : text}”`;
   return [
     ...state.thoughts.map(t => quote(t.createdAt, t.text)),
+    ...state.answers.map(a => `${dateLabel(a.createdAt)}에 내가 “${a.prompt.length > 30 ? a.prompt.slice(0, 30) + '…' : a.prompt}” 하고 물었더니 이렇게 답했어. “${a.text.length > 60 ? a.text.slice(0, 60) + '…' : a.text}”`),
     ...state.moments.map(m => quote(m.createdAt, m.text)),
     ...state.books.flatMap(b => b.entries.filter(e => e.note).map(e => `『${b.title}』을 읽다가 ${dateLabel(e.createdAt)}에 남긴 생각. “${e.note.length > 60 ? e.note.slice(0, 60) + '…' : e.note}”`))
   ];
@@ -126,7 +129,7 @@ function renderHome() {
   catch (e) { $('#slime-stage').innerHTML = `<p class="empty">이 브라우저에서는 슬라임을 그릴 수 없습니다.<br><small>${esc(e.message)}</small></p>`; }
 }
 function renderShelf() {
-  $('#main').innerHTML = `<section aria-labelledby="shelf-title"><div class="intro"><div><p class="eyebrow">MY LITTLE LIBRARY</p><h1 id="shelf-title">나의 책장</h1><p>읽다가 머문 자리마다, 나만의 기록이 쌓입니다. <a class="text-link" href="#questions">남은 질문 ${state.books.reduce((n, b) => n + b.questions.filter(q => !q.answer).length, 0)} ›</a></p></div><button class="primary intro-actions" data-action="add-book">＋ 책 추가</button></div><div class="toolbar"><div class="filters" aria-label="독서 상태">${[['all','전체'],['reading','읽는 중'],['finished','다 읽음']].map(([v,l]) => `<button data-filter="${v}" aria-pressed="${filter === v}">${l}</button>`).join('')}</div><div class="search-field"><label class="visually-hidden" for="local-search">책과 기록 검색</label><input type="search" id="local-search" placeholder="책 제목, 문장, 질문 찾기" value="${esc(query)}"></div></div><div id="shelf-results"></div></section>`;
+  $('#main').innerHTML = `<section aria-labelledby="shelf-title"><div class="intro"><div><h1 id="shelf-title">나의 책장</h1><p>읽다가 머문 자리마다, 나만의 기록이 쌓입니다. <a class="text-link" href="#questions">남은 질문 ${state.books.reduce((n, b) => n + b.questions.filter(q => !q.answer).length, 0)} ›</a></p></div><button class="primary intro-actions" data-action="add-book">＋ 책 추가</button></div><div class="toolbar"><div class="filters" aria-label="독서 상태">${[['all','전체'],['reading','읽는 중'],['finished','다 읽음']].map(([v,l]) => `<button data-filter="${v}" aria-pressed="${filter === v}">${l}</button>`).join('')}</div><div class="search-field"><label class="visually-hidden" for="local-search">책과 기록 검색</label><input type="search" id="local-search" placeholder="책 제목, 문장, 질문 찾기" value="${esc(query)}"></div></div><div id="shelf-results"></div></section>`;
   shelfResults();
   $('#local-search').oninput = e => { query = e.target.value; shelfResults(); };
 }
@@ -172,10 +175,14 @@ function renderBook() {
 }
 function renderQuestions() {
   const qs = state.books.flatMap(b => b.questions.map(q => ({ b, q }))).filter(({q}) => questionFilter === 'all' || (questionFilter === 'open' ? !q.answer : !!q.answer)).reverse();
-  $('#main').innerHTML = `<div class="narrow"><a class="back" href="#shelf">← 책장으로</a><div class="intro"><div><p class="eyebrow">QUESTIONS TO KEEP</p><h1>남은 질문</h1><p>답을 기다리는 시간도 독서의 일부니까요.</p></div></div><div class="toolbar"><div class="filters" aria-label="답변 상태">${[['open','답을 기다리는'],['answered','답을 남긴'],['all','모든 질문']].map(([v,l]) => `<button data-question-filter="${v}" aria-pressed="${questionFilter === v}">${l}</button>`).join('')}</div></div><div class="record-list">${qs.map(({b,q}) => recordCard(q,b,'questions',true)).join('') || empty('질문을 위한 빈자리', '책을 열어 떠오른 물음을 남기면 이곳에 모입니다.')}</div></div>`;
+  $('#main').innerHTML = `<div class="narrow"><a class="back" href="#shelf">← 책장으로</a><div class="intro"><div><h1>남은 질문</h1><p>답을 기다리는 시간도 독서의 일부니까요.</p></div></div><div class="toolbar"><div class="filters" aria-label="답변 상태">${[['open','답을 기다리는'],['answered','답을 남긴'],['all','모든 질문']].map(([v,l]) => `<button data-question-filter="${v}" aria-pressed="${questionFilter === v}">${l}</button>`).join('')}</div></div><div class="record-list">${qs.map(({b,q}) => recordCard(q,b,'questions',true)).join('') || empty('질문을 위한 빈자리', '책을 열어 떠오른 물음을 남기면 이곳에 모입니다.')}</div></div>`;
+}
+function renderAnswers() {
+  const name = state.profile.catName || '슬라임';
+  $('#main').innerHTML = `<div class="narrow"><a class="back" href="#home">← ${esc(name)}에게</a><div class="intro"><div><h1>${esc(name)}에게 한 답</h1><p>하루 한 번 건네는 질문에 본 대로 답한 것들.</p></div></div><div class="record-list">${[...state.answers].reverse().map(a => `<article class="record"><div class="meta"><span>${esc(dateLabel(a.createdAt))}</span></div><p class="asked">${esc(a.prompt)}</p><p class="record-text">${esc(a.text)}</p><div class="record-actions"><button data-action="edit-answer" data-id="${esc(a.id)}">수정</button><button data-action="delete-record" data-type="answers" data-id="${esc(a.id)}">삭제</button></div></article>`).join('') || empty('아직 답한 게 없어요', '첫 화면의 물음표를 누르면 오늘의 질문이 있습니다.')}</div></div>`;
 }
 function renderThoughts() {
-  $('#main').innerHTML = `<div class="narrow"><div class="intro"><div><p class="eyebrow">A PLACE FOR THOUGHTS</p><h1>떠오르는 생각</h1><p>책 바깥에서 떠오른 것도, 잊기 전에.</p></div><button class="primary intro-actions" data-action="add-journal">＋ 기록</button></div><div class="record-list">${[...state.thoughts].reverse().map(t => `<article class="record"><div class="meta"><span>${esc(dateLabel(t.createdAt))}</span></div><p class="record-text">${esc(t.text)}</p><div class="record-actions"><button data-action="edit-journal" data-id="${esc(t.id)}">수정</button><button data-action="delete-record" data-type="thoughts" data-id="${esc(t.id)}">삭제</button></div></article>`).join('') || empty('아무렇게나, 한 줄부터', '잘 정리하지 않아도 괜찮습니다.')}</div></div>`;
+  $('#main').innerHTML = `<div class="narrow"><div class="intro"><div><h1>떠오르는 생각</h1><p>책과 상관없이, 스스로 떠오른 것.</p></div><button class="primary intro-actions" data-action="add-journal">＋ 기록</button></div><div class="record-list">${[...state.thoughts].reverse().map(t => `<article class="record"><div class="meta"><span>${esc(dateLabel(t.createdAt))}</span></div><p class="record-text">${esc(t.text)}</p><div class="record-actions"><button data-action="edit-journal" data-id="${esc(t.id)}">수정</button><button data-action="delete-record" data-type="thoughts" data-id="${esc(t.id)}">삭제</button></div></article>`).join('') || empty('아무렇게나, 한 줄부터', '잘 정리하지 않아도 괜찮습니다.')}</div></div>`;
 }
 
 function openModal(title, body, key = '') {
@@ -233,15 +240,26 @@ function recordEditor(type, bookId, id, answerOnly = false) {
     }
   }));
 }
-function journalEditor(id, prompt = '') {
+function journalEditor(id) {
   const item = state.thoughts.find(x => x.id === id);
-  openModal(`생각 ${item ? '수정' : '남기기'}`, `${prompt ? `<p class="prompt">${esc(prompt)}</p>` : ''}<form id="edit-form">${area(prompt ? '본 대로, 판단 없이' : '지금 떠오른 것','text',item?.text,true)}${submit('기록 저장')}</form>`, `thoughts:${id || (prompt ? 'cat' : 'new')}`);
+  openModal(`생각 ${item ? '수정' : '남기기'}`, `<form id="edit-form">${area('지금 떠오른 것','text',item?.text,true)}${submit('기록 저장')}</form>`, `thoughts:${id || 'new'}`);
   formHandler(data => change(s => {
     const text = data.get('text').trim();
     if (!text) throw new Error('빈칸을 채워주세요.');
     if (item) s.thoughts.find(x => x.id === id).text = text;
     else s.thoughts.push({id:uid(),createdAt:now(),text});
   }));
+}
+// 슬라임의 질문에 답하기 — 생각 탭이 아니라 '답'으로 따로 모읍니다
+function answerEditor(prompt, id) {
+  const item = state.answers.find(x => x.id === id); if (item) prompt = item.prompt;
+  openModal(item ? '답 고치기' : `${esc(state.profile.catName || '슬라임')}의 질문`, `<p class="prompt">${esc(prompt)}</p><form id="edit-form">${area('본 대로, 판단 없이','text',item?.text,true)}${submit(item ? '변경 저장' : '답 남기기')}</form>`, `answer:${id || 'new'}`);
+  formHandler(data => change(s => {
+    const text = data.get('text').trim();
+    if (!text) throw new Error('빈칸을 채워주세요.');
+    if (item) s.answers.find(x => x.id === id).text = text;
+    else s.answers.push({ id: uid(), createdAt: now(), prompt, text });
+  }, item ? '답을 고쳤습니다.' : '답을 남겼습니다.'));
 }
 const radios = (label, name, options, value, optional = true) => `<fieldset class="field pick ${optional ? 'optional' : ''}"><legend>${label}${optional ? ' · 선택' : ''}</legend><div class="chips">${options.map(([v,l]) => `<label class="chip-radio"><input type="radio" name="${name}" value="${v}" ${value === v ? 'checked' : ''}><span>${esc(l)}</span></label>`).join('')}</div></fieldset>`;
 function profileEditor() {
@@ -280,7 +298,7 @@ function download(content, filename) {
 function exportState(data = state, prefix = 'my-slime') { download(backup(data),`${prefix}-${new Date().toISOString().slice(0,10)}.json`); }
 function settings() {
   const s = stats(state);
-  openModal('기록 보관함',`<p class="hint">책 ${s.books}권 · 문장 ${s.entries}개 · 질문 ${s.questions}개<br>생각 ${s.thoughts}개</p><p>기록은 이 기기의 브라우저에 저장됩니다.<br>휴대폰과 PC 사이에 자동으로 공유되지는 않습니다.</p><div class="storage-block"><h3>슬라임</h3><p class="hint">이름과 말투를 고칩니다.</p><button id="cat-profile">슬라임 설정</button></div><div class="storage-block"><h3>파일로 남겨두기</h3><p class="hint">직접 올린 표지 사진까지 포함해 내려받습니다. 검색으로 연결한 표지는 주소가 저장되어 인터넷 연결이 필요합니다.</p><button class="primary" id="export">전체 기록 내보내기</button></div><div class="storage-block"><h3>백업에서 가져오기</h3><p class="hint">이전 기록장의 JSON 파일도 읽을 수 있습니다. 파일을 고르면 복원할 내용을 먼저 보여드립니다.</p><label class="file-label">백업 파일 선택<input class="visually-hidden" type="file" id="import" accept=".json,application/json"></label><div id="restore-area"></div></div><div class="storage-block"><h3>직전 저장 상태</h3><p class="hint">바로 전 저장으로 돌아갑니다. 복원 시 현재 기록도 파일로 내려받습니다.</p><button id="previous">직전 상태 확인</button></div><div class="storage-block"><h3>오래 보관하기</h3><p class="hint">브라우저 데이터를 지우면 기록도 지워집니다. 중요한 기록은 파일로도 보관해주세요.</p><button id="persistent">브라우저에 보관 요청</button><p class="hint" id="persistent-status"></p></div>`);
+  openModal('기록 보관함',`<p class="hint">책 ${s.books}권 · 문장 ${s.entries}개 · 질문 ${s.questions}개<br>생각 ${s.thoughts}개 · 슬라임에게 한 답 ${s.answers}개</p><p>기록은 이 기기의 브라우저에 저장됩니다.<br>휴대폰과 PC 사이에 자동으로 공유되지는 않습니다.</p><div class="storage-block"><h3>슬라임</h3><p class="hint">이름과 말투를 고칩니다.</p><button id="cat-profile">슬라임 설정</button></div><div class="storage-block"><h3>파일로 남겨두기</h3><p class="hint">직접 올린 표지 사진까지 포함해 내려받습니다. 검색으로 연결한 표지는 주소가 저장되어 인터넷 연결이 필요합니다.</p><button class="primary" id="export">전체 기록 내보내기</button></div><div class="storage-block"><h3>백업에서 가져오기</h3><p class="hint">이전 기록장의 JSON 파일도 읽을 수 있습니다. 파일을 고르면 복원할 내용을 먼저 보여드립니다.</p><label class="file-label">백업 파일 선택<input class="visually-hidden" type="file" id="import" accept=".json,application/json"></label><div id="restore-area"></div></div><div class="storage-block"><h3>직전 저장 상태</h3><p class="hint">바로 전 저장으로 돌아갑니다. 복원 시 현재 기록도 파일로 내려받습니다.</p><button id="previous">직전 상태 확인</button></div><div class="storage-block"><h3>오래 보관하기</h3><p class="hint">브라우저 데이터를 지우면 기록도 지워집니다. 중요한 기록은 파일로도 보관해주세요.</p><button id="persistent">브라우저에 보관 요청</button><p class="hint" id="persistent-status"></p></div>`);
   $('#cat-profile').onclick = () => profileEditor();
   $('#export').onclick = () => exportState();
   $('#import').onchange = async e => {
@@ -304,7 +322,7 @@ function settings() {
 function previewRestore(data,label) {
   const s = stats(data);
   $('#form-error').textContent = '';
-  $('#restore-area').innerHTML = `<div class="restore-preview"><b>${label}</b><p>책 ${s.books}권 · 문장 ${s.entries}개 · 질문 ${s.questions}개<br>생각 ${s.thoughts}개</p><p>현재 기록 전체를 이 내용으로 교체합니다.<br>교체 전 현재 기록은 백업 파일로 내려받습니다.</p><button id="confirm-restore" class="primary">현재 기록 백업 후 교체</button></div>`;
+  $('#restore-area').innerHTML = `<div class="restore-preview"><b>${label}</b><p>책 ${s.books}권 · 문장 ${s.entries}개 · 질문 ${s.questions}개<br>생각 ${s.thoughts}개 · 답 ${s.answers}개</p><p>현재 기록 전체를 이 내용으로 교체합니다.<br>교체 전 현재 기록은 백업 파일로 내려받습니다.</p><button id="confirm-restore" class="primary">현재 기록 백업 후 교체</button></div>`;
   $('#confirm-restore').onclick = async e => {
     e.target.disabled = true; exportState(state,'before-restore');
     const ok = await change(s => Object.assign(s,structuredClone(data)),'기록을 복원했습니다.');
@@ -334,7 +352,8 @@ document.addEventListener('click', e => {
     case 'edit-journal': journalEditor(id); break;
     case 'clear-query': query = ''; renderBook(); break;
     case 'profile': profileEditor(); break;
-    case 'cat-thought': journalEditor(undefined, btn.dataset.prompt); break;
+    case 'cat-answer': answerEditor(btn.dataset.prompt); break;
+    case 'edit-answer': answerEditor('', id); break;
     case 'cat-book': recordEditor('entries', book); break;
     case 'cat-skip': skip(btn.dataset.slot); break;
   }

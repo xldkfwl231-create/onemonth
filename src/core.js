@@ -2,7 +2,7 @@ export const VERSION = 3;
 export const uid = () => crypto.randomUUID();
 export const now = () => new Date().toISOString();
 export const emptyProfile = () => ({ catName: '', tone: 'we', aiConsentAt: '' });
-export const emptyState = () => ({ version: VERSION, profile: emptyProfile(), books: [], thoughts: [], moments: [], readings: {}, extraScales: [] });
+export const emptyState = () => ({ version: VERSION, profile: emptyProfile(), books: [], thoughts: [], answers: [], moments: [], readings: {}, extraScales: [] });
 const object = v => v && typeof v === 'object' && !Array.isArray(v);
 function text(v, label, max = 100000, optional = false) {
   if (v == null && optional) return '';
@@ -59,12 +59,14 @@ export function normalize(input) {
   const moments = !v3 ? trips : list(p.moments, '순간').map(m => { row(m); return { id: id(m.id), createdAt: text(m.createdAt, '날짜', 100, true), text: text(m.text, '순간'), energy: pick(m.energy, ENERGY.map(o => o[0]), '기운'), with: pick(m.with, WITH.map(o => o[0]), '누구와'), chosen: pick(m.chosen, CHOSEN.map(o => o[0]), '골랐나'), place: text(m.place, '장소', 500, true), from: m.from === 'cat' ? 'cat' : 'self' }; });
   let profile = emptyProfile();
   if (v3) { const q = row(p.profile); profile = { catName: text(q.catName, '고양이 이름', 30, true), tone: q.tone === 'you' ? 'you' : 'we', aiConsentAt: text(q.aiConsentAt, '동의 시각', 100, true) }; }
+  // 슬라임의 질문에 한 답 — 생각(스스로 떠오른 것)과는 다른 갈래
+  const answers = !v3 ? [] : list(p.answers, '답', true).map(a => { row(a); return { id: id(a.id), createdAt: text(a.createdAt, '날짜', 100, true), prompt: text(a.prompt, '질문', 500, true), text: text(a.text, '답') }; });
   const readings = v3 && object(p.readings) ? structuredClone(p.readings) : {};
   const extraScales = v3 && Array.isArray(p.extraScales) ? structuredClone(p.extraScales) : [];
-  return { version: VERSION, profile, books, thoughts, moments, readings, extraScales };
+  return { version: VERSION, profile, books, thoughts, answers, moments, readings, extraScales };
 }
 export function backup(state) { return JSON.stringify({ format: 'reading-notebook', exportedAt: now(), data: normalize(state) }, null, 2); }
-export function stats(s) { return { books: s.books.length, entries: s.books.reduce((n, b) => n + b.entries.length, 0), questions: s.books.reduce((n, b) => n + b.questions.length, 0), thoughts: s.thoughts.length, moments: s.moments.length }; }
+export function stats(s) { return { books: s.books.length, entries: s.books.reduce((n, b) => n + b.entries.length, 0), questions: s.books.reduce((n, b) => n + b.questions.length, 0), thoughts: s.thoughts.length, answers: s.answers.length, moments: s.moments.length }; }
 export function matchesBook(b, query) {
   const q = query.trim().toLocaleLowerCase();
   return !q || [b.title, b.author, b.publisher, b.isbn, ...b.entries.flatMap(e => [e.text, e.note, e.page]), ...b.questions.flatMap(e => [e.text, e.answer])].some(t => t.toLocaleLowerCase().includes(q));
@@ -107,7 +109,7 @@ export function nextQuestion(state, now = new Date(), skipped = []) {
   const book = [...state.books].reverse().find(b => b.status === 'reading');
   if (book && evening && !skipped.includes('book') && !book.entries.some(e => today(e.createdAt)))
     return { slot: 'book', title: '책', type: 'book', bookId: book.id, text: `『${book.title}』에서 오늘 머문 문장이 ${tone ? '있어?' : '있었나?'}` };
-  if (!skipped.includes('prompt') && !state.thoughts.some(t => today(t.createdAt)))
-    return { slot: 'prompt', title: '생각', type: 'moment', text: PROMPTS[Number(date.replaceAll('-', '')) % PROMPTS.length][tone] };
+  if (!skipped.includes('prompt') && !state.answers.some(a => today(a.createdAt)))
+    return { slot: 'prompt', title: '오늘의 질문', type: 'moment', text: PROMPTS[Number(date.replaceAll('-', '')) % PROMPTS.length][tone] };
   return null;
 }
