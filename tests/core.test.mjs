@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalize, backup, matchesBook, dateLabel, dayKey, safeCover, emptyState, nextQuestion, dayOf, boardGraph } from '../src/core.js';
+import { normalize, backup, matchesBook, dateLabel, dayKey, safeCover, emptyState, nextQuestion, dayOf, boardGraph, seenSelf } from '../src/core.js';
 const old = () => ({books:[{t:'독서의 기술',s:'8/1',e:[{l:'오래 남은 문장',d:'8/2'}]}],thoughts:[{t:'생각',d:'8/3'}],trips:[{p:'통영',n:'바다'}],cur:0});
 test('legacy migration preserves every record, original dates and original input',() => {
   const input = old(), copy = structuredClone(input), s = normalize(input);
@@ -118,4 +118,24 @@ test('a book keeps its summary, and a broken one is dropped', () => {
   assert.deepEqual(s.books[0].summary, { at: '2026-10-11T00:00:00Z', n: 4, line: '한 줄', held: [{ id: 'e', why: '왜' }], open: [], changed: [{ then: '그땐', now: '지금은' }] });
   assert.deepEqual(normalize(JSON.parse(backup(s))), s);
   assert.equal(normalize({ ...base, books: [{ id: 'b', title: '책', status: 'reading', entries: [], questions: [], summary: 'x' }] }).books[0].summary, null);
+});
+
+test('seen self counts tags by month, new and faded tags, held questions and changed answers', () => {
+  const today = new Date(2026, 9, 20), at = (m, d) => new Date(2026, m, d, 12).toISOString();
+  const s = normalize({ version: 3, profile: { catName: '', tone: 'we', aiConsentAt: '' }, moments: [], answers: [],
+    thoughts: [{ id: 't1', text: 'a', createdAt: at(7, 3) }, { id: 't2', text: 'b', createdAt: at(7, 9) }, { id: 't3', text: 'c', createdAt: at(9, 15), more: [{ id: 'm', text: 'd', createdAt: at(9, 18) }] }],
+    books: [{ id: 'b', title: '책', status: 'reading', entries: [], questions: [
+      { id: 'q1', text: '오래된 질문', createdAt: at(7, 1), answer: '' },
+      { id: 'q2', text: '바뀐 질문', createdAt: at(8, 1), answer: '지금은 이래', answeredAt: at(9, 10), history: [{ text: '그땐 저래', at: at(8, 5) }] }] }],
+    readings: { t1: { tags: ['회의'] }, t2: { tags: ['회의', '피로'] }, t3: { tags: ['혼자'] } },
+    chats: [{ id: 'c', topic: { kind: 'thought', ref: 't3', title: 'c' }, messages: [{ role: 'user', text: 'x' }, { role: 'assistant', text: 'y' }] }] });
+  const r = seenSelf(s, today);
+  assert.deepEqual(r.months.map(m => m.key), ['2026-08', '2026-09', '2026-10']);
+  assert.deepEqual(r.months[0].tags, [['회의', 2], ['피로', 1]]);
+  assert.deepEqual(r.months[2].tags, [['혼자', 2]]);                 // 덧붙인 말도 그 생각의 주제어로 셈
+  assert.deepEqual(r.fresh, [['혼자', 2]]);
+  assert.deepEqual(r.faded, [['회의', 2]]);
+  assert.equal(r.holding[0].id, 'q1'); assert.equal(r.holding[0].days, 79);   // 8월 1일 낮 → 10월 20일 0시
+  assert.deepEqual(r.changed[0], { id: 'q2', book: 'b', text: '바뀐 질문', then: '그땐 저래', now: '지금은 이래' });
+  assert.equal(r.talked[0].n, 2);
 });

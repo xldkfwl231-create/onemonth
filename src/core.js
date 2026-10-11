@@ -160,3 +160,28 @@ export function boardGraph(s) {
   for (const [t, n] of tags) nodes.push({ id: 'tag:' + t, kind: 'tag', label: t, count: n });
   return { nodes, links };
 }
+
+// 슬라임이 본 나 — AI 없이 기록에서 바로 셉니다. 달마다 많이 나온 주제어, 새로 생긴 · 뜸해진 주제어,
+// 오래 품은 질문, 그땐 → 지금은으로 바뀐 답, 가장 많이 이야기한 기록.
+export function seenSelf(s, today = new Date()) {
+  const recs = [];
+  const push = (id, at, kind, text, tagId = id) => { if (isIso(at)) recs.push({ id, at: Date.parse(at), kind, text, tags: s.readings?.[tagId]?.tags || [] }); };
+  for (const t of s.thoughts) { push(t.id, t.createdAt, 'thought', t.text); for (const m of t.more || []) push(m.id, m.createdAt, 'thought', m.text, t.id); }
+  for (const a of s.answers) push(a.id, a.createdAt, 'answer', a.text);
+  for (const b of s.books) for (const e of b.entries) { if (e.note) push(e.id, e.createdAt, 'entry', e.note); for (const m of e.more || []) push(m.id, m.createdAt, 'entry', m.text, e.id); }
+  const monthOf = t => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
+  const months = [];
+  for (let i = 2; i >= 0; i--) { const d = new Date(today.getFullYear(), today.getMonth() - i, 1); months.push(monthOf(d)); }
+  const count = list => { const m = new Map(); for (const r of list) for (const t of r.tags) m.set(t, (m.get(t) || 0) + 1); return [...m].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])); };
+  const byMonth = months.map(key => { const list = recs.filter(r => monthOf(r.at) === key); return { key, records: list.length, tags: count(list).slice(0, 5) }; });
+  const edge = today.getTime() - 30 * 864e5, recent = count(recs.filter(r => r.at >= edge)), before = count(recs.filter(r => r.at < edge));
+  const beforeMap = new Map(before), recentMap = new Map(recent);
+  const fresh = recent.filter(([t]) => !beforeMap.has(t)).slice(0, 5);
+  const faded = before.filter(([t, n]) => n >= 2 && !recentMap.has(t)).slice(0, 5);
+  const days = at => isIso(at) ? Math.max(0, Math.floor((today.getTime() - Date.parse(at)) / 864e5)) : 0;
+  const questions = s.books.flatMap(b => b.questions.map(q => ({ q, b })));
+  const holding = questions.filter(({ q }) => !q.answer).sort((x, y) => (Date.parse(x.q.createdAt) || 0) - (Date.parse(y.q.createdAt) || 0)).slice(0, 3).map(({ q, b }) => ({ id: q.id, book: b.id, text: q.text, days: days(q.createdAt) }));
+  const changed = questions.filter(({ q }) => (q.history || []).length && q.answer).sort((x, y) => (Date.parse(y.q.answeredAt) || 0) - (Date.parse(x.q.answeredAt) || 0)).slice(0, 3).map(({ q, b }) => ({ id: q.id, book: b.id, text: q.text, then: q.history.at(-1).text, now: q.answer }));
+  const talked = [...(s.chats || [])].filter(c => c.messages.length && c.topic.kind !== 'free').sort((a, b) => b.messages.length - a.messages.length).slice(0, 3).map(c => ({ id: c.id, kind: c.topic.kind, title: c.topic.title, n: c.messages.length }));
+  return { total: recs.length, months: byMonth, fresh, faded, holding, changed, talked };
+}

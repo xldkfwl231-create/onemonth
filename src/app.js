@@ -1,10 +1,10 @@
-import { uid, now, emptyState, normalize, backup, stats, matchesBook, dateLabel, safeCover, emptyUsage, dayOf, isIso, boardGraph } from './core.js';
+import { uid, now, emptyState, normalize, backup, stats, matchesBook, dateLabel, safeCover, emptyUsage, dayOf, isIso, boardGraph, seenSelf } from './core.js';
 import { mountSlime } from './slime.js';
 import { mountBoard, BOARD_COLORS } from './board.js';
 import { openStore, load, commit, previous } from './storage.js';
 import { BOOK_SEARCH_ENDPOINT, AI_ENDPOINT, AI_SUMMARY_ENDPOINT, AI_CHAT_ENDPOINT } from './config.js';
 
-const BUILD = '1012n';   // 폰에서 어떤 판을 보고 있는지 확인용
+const BUILD = '1012o';   // 폰에서 어떤 판을 보고 있는지 확인용
 const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 // 이름 뒤 조사 — 받침이 있으면 이/과, 없으면 가/와 (뚱이가, 말랑이)
@@ -309,6 +309,7 @@ function renderBoard() {
   board = mountBoard($('#board-canvas'), { nodes: g.nodes, links: g.links, reduced: matchMedia('(prefers-reduced-motion: reduce)').matches,
     onSelect: n => { const card = $('#board-card'); if (!card) return; card.hidden = !n; card.innerHTML = n ? `<button class="quiet card-close" data-action="board-close" aria-label="닫기">✕</button>${boardCardHtml(n)}` : ''; } });
   $('#board-canvas').__board = board;   // 확인용
+  if (boardFocus) { const f = boardFocus; boardFocus = ''; setTimeout(() => board?.select(f), 900); }
 }
 function renderShelf() {
   $('#main').innerHTML = `<section aria-labelledby="shelf-title"><div class="intro"><div><h1 id="shelf-title">나의 책장</h1><p>읽다가 머문 자리마다, 나만의 기록이 쌓입니다. <a class="text-link" href="#questions">답을 기다리는 질문 ${state.books.reduce((n, b) => n + b.questions.filter(q => !q.answer).length, 0)} ›</a></p></div><button class="primary intro-actions" data-action="add-book">＋ 책 추가</button></div><div class="toolbar"><div class="filters" aria-label="독서 상태">${[['all','전체'],['reading','읽는 중'],['finished','다 읽음']].map(([v,l]) => `<button data-filter="${v}" aria-pressed="${filter === v}">${l}</button>`).join('')}</div><div class="search-field"><label class="visually-hidden" for="local-search">책과 기록 검색</label><input type="search" id="local-search" placeholder="책 제목, 문장, 질문 찾기" value="${esc(query)}"></div></div><div id="shelf-results"></div></section>`;
@@ -869,6 +870,22 @@ function usageBlock() {
     <p class="hint">Claude Haiku 5.5 값(입력 100만 토큰당 $0.10, 출력 $0.50)과 1달러 = ${WON_PER_USD.toLocaleString()}원으로 셈한 대략치입니다. 정확한 청구는 Anthropic 콘솔에서 확인하세요.</p>
     <button class="quiet" data-action="usage-reset">0부터 다시 세기</button>`;
 }
+// ── 슬라임이 본 나 ── 기록에서 바로 센 것. 주제어를 누르면 기록 지도에서 그 주제어를 펼칩니다.
+let boardFocus = '';
+function seenHtml() {
+  const r = seenSelf(state), name = state.profile.catName || '슬라임';
+  if (r.total < 3) return `<section class="me-card seen"><h2>${esc(ig(name))} 본 나</h2><p class="hint">기록이 조금 더 쌓이면 여기서 내가 요즘 어디에 머무는지 보여 줄게요. 생각을 먹이고, 책에 메모를 남겨 보세요.</p></section>`;
+  const tag = ([t, n], cls = '') => `<button class="seen-tag ${cls}" data-action="seen-tag" data-id="${esc(t)}">#${esc(t)} <small>${n}</small></button>`;
+  const max = Math.max(1, ...r.months.flatMap(m => m.tags.map(t => t[1])));
+  const month = m => `<div class="seen-month"><b>${Number(m.key.slice(5))}월</b><small>기록 ${m.records}</small><div class="seen-bars">${m.tags.length ? m.tags.map(([t, n]) => `<button class="seen-bar" data-action="seen-tag" data-id="${esc(t)}"><span style="width:${Math.round(n / max * 100)}%"></span><em>#${esc(t)} ${n}</em></button>`).join('') : `<p class="hint">${state.profile.aiConsentAt ? '주제어가 아직 없어요' : '슬라임이 기록 읽기를 켜면 주제어가 붙어요'}</p>`}</div></div>`;
+  return `<section class="me-card seen"><h2>${esc(ig(name))} 본 나</h2>
+    <h3>달마다 머문 곳</h3>${r.months.map(month).join('')}
+    ${r.fresh.length || r.faded.length ? `<h3>요즘 30일</h3>${r.fresh.length ? `<p class="seen-row"><span>새로 생김</span>${r.fresh.map(t => tag(t, 'new')).join('')}</p>` : ''}${r.faded.length ? `<p class="seen-row"><span>뜸해짐</span>${r.faded.map(t => tag(t, 'old')).join('')}</p>` : ''}` : ''}
+    ${r.holding.length ? `<h3>오래 품은 질문</h3>${r.holding.map(q => `<button class="seen-item" data-action="seen-go" data-kind="question" data-id="${esc(q.id)}" data-book="${esc(q.book)}"><span>? ${esc(q.text)}</span><small>${q.days}일째</small></button>`).join('')}` : ''}
+    ${r.changed.length ? `<h3>그땐 → 지금은</h3>${r.changed.map(q => `<button class="seen-item" data-action="seen-go" data-kind="question" data-id="${esc(q.id)}" data-book="${esc(q.book)}"><span>${esc(q.text)}</span><small>그땐 ${esc(cutN(q.then, 40))} → 지금은 ${esc(cutN(q.now, 40))}</small></button>`).join('')}` : ''}
+    ${r.talked.length ? `<h3>가장 오래 이야기한 것</h3>${r.talked.map(c => `<a class="seen-item" href="#talk/${esc(c.id)}"><span>${esc(cutN(talkFull(state.chats.find(x => x.id === c.id)) || c.title, 60))}</span><small>${talkKind[c.kind]} · ${c.n}마디</small></a>`).join('')}` : ''}
+  </section>`;
+}
 function renderMe() {
   const p = state.profile, name = p.catName || '나만의 슬라임', s = stats(state), look = slimeLook();
   const first = beadList().find(b => b.at), days = first ? Math.max(1, Math.round((Date.now() - first.at) / 864e5)) : 0;
@@ -878,6 +895,7 @@ function renderMe() {
       <div class="me-who"><h1>${esc(name)}</h1><p>${days ? `<span>함께한 지 ${days}일</span> · ` : ''}<span>방울 ${beadList().length}개</span>${look.tag ? ` · <span>요즘 #${esc(look.tag)}</span>` : ''}</p></div>
       <button data-action="profile">바꾸기</button>
     </section>
+    ${seenHtml()}
     <section class="me-card"><h2>슬라임이 기록 읽기</h2>
       <p class="hint">켜면 내가 쓴 <b>생각, 메모와 덧붙인 말, 질문과 답, 이야기에서 한 말</b>을 AI(Anthropic Claude)에게 보내 주제어를 붙이고, 이야기와 책 정리 때 슬라임이 이걸 <b>기억</b>으로 씁니다. 책에서 옮겨 적은 문장은 내가 골라 이야기할 때만 보냅니다. 중계소는 글을 저장하지 않고, 결과는 이 기기에만 남습니다.</p>
       <div class="me-toggle"><button id="ai-toggle" class="${p.aiConsentAt ? '' : 'primary'}">${p.aiConsentAt ? '끄기' : '켜기'}</button><p class="hint" id="ai-status">${aiStatus()}</p></div>
@@ -967,6 +985,8 @@ document.addEventListener('click', e => {
     case 'talk-quote': { if (ctxOpen) { ctxOpen = false; document.body.classList.remove('ctx-open'); $('[data-action=talk-ctx]')?.setAttribute('aria-pressed', 'false'); } const el = $('#talk-input'); if (el) { el.value = (el.value ? el.value.replace(/\s*$/, '\n') : '') + `“${btn.dataset.text}” `; el.dispatchEvent(new Event('input')); el.focus(); } break; }
     case 'talk-keep': talkKeep(route().id); break;
     case 'talk-delete': deleteTalk(id); break;
+    case 'seen-tag': boardFocus = 'tag:' + id; location.hash = 'board'; break;
+    case 'seen-go': focusRec = id; entryTab = 'questions'; location.hash = `book/${book}`; break;
     case 'summarize': { const b = currentBook(); if (b) summarizeBook(b.id); break; }
     case 'sum-go': entryTab = btn.dataset.tab; focusRec = id; renderBook(); break;
     case 'backup-now': exportState(); notice('기록을 파일로 내려받았습니다. 파일을 안전한 곳(드라이브 등)에 옮겨 두세요.'); break;

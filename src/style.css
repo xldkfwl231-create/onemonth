@@ -701,3 +701,25 @@ body.night .backup-nudge{background:#3b3550;border-color:#7a5f8a;box-shadow:0 4p
 .book-sum.pending .dots{display:inline-flex;gap:3px;vertical-align:middle}
 .book-sum.pending .dots i{width:6px;height:6px;border-radius:50%;background:var(--mint-deep);animation:typing 1s infinite ease-in-out}
 .book-sum.pending .dots i:nth-child(2){animation-delay:.15s}.book-sum.pending .dots i:nth-child(3){animation-delay:.3s}
+
+/* ── 슬라임이 본 나 ── */
+.seen h3{margin:14px 0 8px;font:400 14px var(--head);color:var(--muted)}
+.seen h3:first-of-type{margin-top:6px}
+.seen-month{display:grid;grid-template-columns:44px minmax(0,1fr);gap:4px 10px;margin-bottom:10px}
+.seen-month b{font:400 16px var(--head)}
+.seen-month small{grid-column:1;grid-row:2;font-size:11px;color:var(--muted)}
+.seen-bars{grid-column:2;grid-row:1/span 2;display:flex;flex-direction:column;gap:4px}
+.seen-bars .hint{margin:0}
+.seen-bar{position:relative;display:block;width:100%;min-height:26px;padding:0;border:0;border-radius:8px;background:var(--bg);box-shadow:none;overflow:hidden;text-align:left}
+.seen-bar:active{transform:none}
+.seen-bar span{position:absolute;inset:0 auto 0 0;background:var(--mint-pale);border-right:3px solid var(--mint)}
+.seen-bar em{position:relative;font:400 12.5px/26px var(--head);font-style:normal;padding-left:8px;color:#2f5a3a}
+.seen-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 6px}
+.seen-row > span{font-size:12px;color:var(--muted);min-width:56px}
+.seen-tag{min-height:32px;padding:3px 11px;border-radius:999px;border:2px solid var(--mint-line);background:var(--mint-pale);box-shadow:none;font:400 13px var(--head);color:#2f5a3a}
+.seen-tag.old{border-color:var(--line);background:var(--bg);color:var(--muted)}
+.seen-tag small{font-size:11px;opacity:.7}
+.seen-item{display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;min-height:0;margin:0 0 6px;padding:8px 12px;text-align:left;border:2px solid var(--line);border-radius:12px;background:var(--bg);box-shadow:none;color:var(--ink);font:400 14px/1.5 var(--body)}
+.seen-item:active{transform:none}
+.seen-item span{overflow-wrap:anywhere}
+.seen-item small{font-size:12px;color:var(--muted);overflow-wrap:anywhere}
