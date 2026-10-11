@@ -4,7 +4,7 @@ import { mountBoard, BOARD_COLORS } from './board.js';
 import { openStore, load, commit, previous } from './storage.js';
 import { BOOK_SEARCH_ENDPOINT, AI_ENDPOINT, AI_SUMMARY_ENDPOINT, AI_CHAT_ENDPOINT } from './config.js';
 
-const BUILD = '1012p';   // 폰에서 어떤 판을 보고 있는지 확인용
+const BUILD = '1012q';   // 폰에서 어떤 판을 보고 있는지 확인용
 const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 // 이름 뒤 조사 — 받침이 있으면 이/과, 없으면 가/와 (뚱이가, 말랑이)
@@ -375,7 +375,7 @@ async function summarizeBook(bookId) {
     if (res.status === 404 || res.status === 405) throw new Error('중계소가 아직 예전 코드예요. worker 코드를 새로 붙여 넣어 주세요.');
     if (!res.ok || typeof out.line !== 'string' || !Array.isArray(out.held)) throw new Error(out.error || `연결 실패 (${res.status})`);
     summaryPending = '';
-    await change(s => { const x = s.books.find(y => y.id === bookId); if (x) x.summary = { at: now(), n: bookWords(b), line: out.line, held: out.held, open: out.open || [], changed: out.changed || [] }; addUsage(s, 'summary', out.usage); }, '책을 정리했습니다.');
+    await change(s => { const x = s.books.find(y => y.id === bookId); if (x) x.summary = { at: now(), n: bookWords(b), line: out.line, held: out.held, open: out.open || [], changed: (out.changed || []).map(c => ({ ...(c.id ? { id: c.id } : {}), then: c.then, now: c.now })) }; addUsage(s, 'summary', out.usage); }, '책을 정리했습니다.');
     flashUsage('summary', out.usage);
   } catch (e) { notice(`정리하지 못했어요. ${e.name === 'TimeoutError' ? '시간이 너무 오래 걸렸습니다.' : e.message}`); }
   finally { summaryPending = ''; if (route().page === 'book' && route().id === bookId) renderBook(); }
@@ -389,7 +389,7 @@ function summaryHtml(b) {
     ${s.line ? `<p class="sum-line">${esc(s.line)}</p>` : ''}
     ${held.length ? `<h3>붙든 문장</h3>${held.map(({ h, e }) => `<button class="sum-item" data-action="sum-go" data-tab="entries" data-id="${esc(e.id)}"><span class="q-text">“${esc(e.text)}”</span>${e.page ? `<small>p. ${esc(e.page)}</small>` : ''}${h.why ? `<span class="why">${esc(h.why)}</span>` : ''}</button>`).join('')}` : ''}
     ${open.length ? `<h3>아직 답 못 한 질문</h3>${open.map(({ o, q }) => `<button class="sum-item q" data-action="sum-go" data-tab="questions" data-id="${esc(q.id)}"><span class="q-text">? ${esc(q.text)}</span>${o.why ? `<span class="why">${esc(o.why)}</span>` : ''}</button>`).join('')}` : ''}
-    ${s.changed.length ? `<h3>그사이 바뀐 생각</h3>${s.changed.map(c => `<div class="sum-change"><p><span>그땐</span>${esc(c.then)}</p><p><span>지금은</span>${esc(c.now)}</p></div>`).join('')}` : ''}
+    ${s.changed.length ? `<h3>그사이 바뀐 생각</h3>${s.changed.map(c => { const q = c.id && b.questions.find(x => x.id === c.id), e = c.id && b.entries.find(x => x.id === c.id), body = `${q || e ? `<small class="about">${esc(cutN(q ? '? ' + q.text : '“' + e.text + '”', 50))}</small>` : ''}<p><span>그땐</span>${esc(c.then)}</p><p><span>지금은</span>${esc(c.now)}</p>`; return q || e ? `<button class="sum-change" data-action="sum-go" data-tab="${q ? 'questions' : 'entries'}" data-id="${esc(c.id)}">${body}</button>` : `<div class="sum-change">${body}</div>`; }).join('')}` : ''}
     <div class="sum-foot"><button class="quiet" data-action="summarize">${fresh ? '새로 남긴 말까지 다시 정리' : '다시 정리'}</button></div>
   </details>`;
 }

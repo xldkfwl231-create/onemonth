@@ -45,7 +45,7 @@ export function normalize(input) {
     if (!object(v)) return null;
     const str = (x, n) => typeof x === 'string' ? x.slice(0, n) : '', arr = (x, f) => Array.isArray(x) ? x.slice(0, 8).map(f).filter(Boolean) : [];
     const pin = h => object(h) && typeof h.id === 'string' ? { id: h.id.slice(0, 100), why: str(h.why, 200) } : null;
-    return { at: str(v.at, 40), n: Number.isFinite(v.n) && v.n >= 0 ? Math.round(v.n) : 0, line: str(v.line, 200), held: arr(v.held, pin), open: arr(v.open, pin), changed: arr(v.changed, c => object(c) && typeof c.then === 'string' && typeof c.now === 'string' ? { then: c.then.slice(0, 200), now: c.now.slice(0, 200) } : null) };
+    return { at: str(v.at, 40), n: Number.isFinite(v.n) && v.n >= 0 ? Math.round(v.n) : 0, line: str(v.line, 200), held: arr(v.held, pin), open: arr(v.open, pin), changed: arr(v.changed, c => object(c) && typeof c.then === 'string' && typeof c.now === 'string' ? { ...(typeof c.id === 'string' && c.id ? { id: c.id.slice(0, 100) } : {}), then: c.then.slice(0, 200), now: c.now.slice(0, 200) } : null) };
   };
   const books = list(p.books, '책', !modern).map(b => {
     row(b);

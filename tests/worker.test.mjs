@@ -56,7 +56,7 @@ test('health tells whether the key is set without revealing it', async () => {
 
 test('summary: takes only my own words, keeps known ids, trims lengths', async () => {
   let body;
-  fakeAI({ stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify({ line: '판단 전에 보기.', held: [{ id: 'e1', why: '메모를 세 번 덧붙임' }, { id: 'nope', why: 'x' }, { id: 'e1', why: '중복' }], open: [{ id: 'q1', why: '아직 답 없음' }, { id: 'e1', why: '질문 아님' }], changed: [{ then: '결론부터', now: '먼저 보기' }, { then: '', now: 'x' }] }) }], usage: { input_tokens: 900, output_tokens: 120 } },
+  fakeAI({ stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify({ line: '판단 전에 보기.', held: [{ id: 'e1', why: '메모를 세 번 덧붙임' }, { id: 'nope', why: 'x' }, { id: 'e1', why: '중복' }], open: [{ id: 'q1', why: '아직 답 없음' }, { id: 'e1', why: '질문 아님' }], changed: [{ id: 'e1', then: '결론부터', now: '먼저 보기' }, { id: 'e1', then: '', now: 'x' }, { id: 'nope', then: 'a', now: 'b' }, { id: 'q1', then: '같음', now: '같음' }] }) }], usage: { input_tokens: 900, output_tokens: 120 } },
     (url, init) => { body = JSON.parse(init.body); });
   const res = await call({ name: '말랑', tone: 'we', book: { title: '책', author: '저자' },
     entries: [{ id: 'e1', page: '42', note: '결론부터 내는 편', more: ['회의에서 특히'], talk: ['빨리 끝내고 싶어서'], text: '옮겨 적은 문장' }],
@@ -65,7 +65,8 @@ test('summary: takes only my own words, keeps known ids, trims lengths', async (
   const out = await res.json();
   assert.deepEqual(out.held, [{ id: 'e1', why: '메모를 세 번 덧붙임' }]);
   assert.deepEqual(out.open, [{ id: 'q1', why: '아직 답 없음' }]);
-  assert.deepEqual(out.changed, [{ then: '결론부터', now: '먼저 보기' }]);
+  assert.deepEqual(out.changed, [{ id: 'e1', then: '결론부터', now: '먼저 보기' }]);   // 한 기록 안의 변화만, 같은 말은 버림
+  assert.match(body.system, /남 얘기하듯/);
   assert.deepEqual(out.usage, { input: 900, output: 120 });
   assert.ok(!body.messages[0].content.includes('옮겨 적은 문장'));   // 책 문장은 AI로 가지 않음
   assert.equal(body.output_config.format.type, 'json_schema');
@@ -87,6 +88,7 @@ test('chat: the slime gets my records as memory', async () => {
   assert.ok(!body.system.includes('혼자 걷는 출근길'));   // 70개를 넘겨 맨 뒤 60개만
   assert.match(body.system, /옛 생각 69/);
   assert.match(body.system, /기억 쓰는 법/);
+  assert.match(body.system, /되묻지 마세요/);
   const res2 = await call({ topic: { kind: 'free' }, memory: memory.slice(0, 2), messages: [{ role: 'user', text: '요즘 어때?' }] }, { path: '/ai/chat' });
   assert.equal(res2.status, 200);
   assert.match(body.system, /\[10월 3일\] 생각: 혼자 걷는 출근길이 좋았다/);

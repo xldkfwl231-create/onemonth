@@ -10,7 +10,7 @@
  * POST /ai/chat          → 슬라임과 이야기(토론). { name, tone, topic, memory: [{ date, kind, text }], messages: [{ role, text }] } → { reply }
  *                          memory = 이 사람이 앱에 남긴 것들 — 슬라임은 이걸 기억으로 삼아 이야기합니다
  * POST /ai/summary       → 책 한 권 정리. { name, tone, book, entries: [{ id, page, note, more, talk }], questions: [{ id, text, answer, history, talk }], talk }
- *                          → { line, held: [{ id, why }], open: [{ id, why }], changed: [{ then, now }] }  (책에서 옮겨 적은 문장은 받지 않음)
+ *                          → { line, held: [{ id, why }], open: [{ id, why }], changed: [{ id, then, now }] }  (책에서 옮겨 적은 문장은 받지 않음)
  * GET  /ai/health        → 열쇠가 들어 있는지만 알려 줌 (열쇠 값은 절대 내보내지 않음)
  *
  * 이 중계소는 기록을 저장하지 않습니다. 받은 글을 AI에 넘기고 답만 돌려줍니다.
@@ -188,12 +188,14 @@ async function summary(request, env, json) {
     '- line: 이 책이 이 사람에게 남긴 것을 한 줄로. 이 사람이 쓴 말에 기대어. 80자 이내.',
     '- held: 이 사람이 가장 오래, 많이 붙든 문장 최대 5개 (entries의 id). why에는 왜 붙들었는지를 이 사람의 말로 60자 이내.',
     '- open: 아직 답을 못 했거나 답이 흔들리는 질문 최대 5개 (questions의 id). why에는 무엇이 아직 열려 있는지 60자 이내.',
-    '- changed: 그사이 바뀐 생각 최대 4개. then(그땐)과 now(지금은)를 각각 80자 이내로, 예전 답 → 지금의 답, 메모 → 덧붙인 말, 이야기 처음 → 나중의 흐름에서 찾으세요. 바뀐 게 없으면 빈 목록.',
+    '- changed: 그사이 바뀐 생각 최대 4개. 반드시 한 기록 안에서만 찾으세요: 같은 질문의 예전 답(history) → 지금의 답(answer), 같은 문장의 메모(note) → 덧붙인 말(more), 같은 기록으로 나눈 이야기(talk)의 앞 → 뒤. id에는 그 기록(entries 또는 questions)의 id. then(그땐)과 now(지금은)는 각각 80자 이내.',
+    '- 서로 다른 기록의 말을 짝짓지 마세요. 생각이 실제로 달라진 게 아니면 넣지 마세요. 바뀐 게 없으면 빈 목록.',
     '',
     '규칙:',
     '- 기록에 없는 일을 지어내지 마세요. 이 사람이 쓴 말을 짧게 인용해도 좋습니다.',
     '- 이 사람을 평가하거나 진단하지 마세요. 조언도 하지 마세요. 본 대로만.',
-    '- 다정한 반말. ' + (tone === 'we' ? '이 사람을 "우리"라고 부르세요.' : '이 사람을 "너"라고 부르세요.'),
+    '- 다정한 반말로, 이 사람에게 직접 말하듯 쓰세요. "~했대", "~래", "이 사람은"처럼 남 얘기하듯 쓰지 마세요.',
+    tone === 'we' ? '- 당신과 이 사람은 하나입니다. 주어는 "우리"로. 예: "우리는 보기 전에 결론부터 내는 편이라는 걸 봤어."' : '- 이 사람을 "너"라고 부르세요. 예: "너는 보기 전에 결론부터 내는 편이라는 걸 봤어."',
     '- id는 받은 것 중에서만 고르세요.',
   ].join('\n');
   const user = JSON.stringify({ 책: book, 문장들: entries, 질문들: questions, 책_이야기: talk });
@@ -203,7 +205,7 @@ async function summary(request, env, json) {
       line: { type: 'string' },
       held: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, why: { type: 'string' } }, required: ['id', 'why'], additionalProperties: false } },
       open: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, why: { type: 'string' } }, required: ['id', 'why'], additionalProperties: false } },
-      changed: { type: 'array', items: { type: 'object', properties: { then: { type: 'string' }, now: { type: 'string' } }, required: ['then', 'now'], additionalProperties: false } },
+      changed: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, then: { type: 'string' }, now: { type: 'string' } }, required: ['id', 'then', 'now'], additionalProperties: false } },
     },
     required: ['line', 'held', 'open', 'changed'],
     additionalProperties: false,
@@ -215,7 +217,7 @@ async function summary(request, env, json) {
   return json({
     line: str(o.line, 160).trim(),
     held: pick(o.held, eIds), open: pick(o.open, qIds),
-    changed: (Array.isArray(o.changed) ? o.changed : []).filter(c => typeof c?.then === 'string' && typeof c?.now === 'string' && c.then.trim() && c.now.trim()).slice(0, 4).map(c => ({ then: c.then.trim().slice(0, 160), now: c.now.trim().slice(0, 160) })),
+    changed: (Array.isArray(o.changed) ? o.changed : []).filter(c => typeof c?.then === 'string' && typeof c?.now === 'string' && c.then.trim() && c.now.trim() && (eIds.has(c.id) || qIds.has(c.id)) && c.then.trim() !== c.now.trim()).slice(0, 4).map(c => ({ id: c.id, then: c.then.trim().slice(0, 160), now: c.now.trim().slice(0, 160) })),
     model: MODEL, usage: r.usage,
   });
 }
@@ -259,7 +261,9 @@ async function chat(request, env, json) {
     '- 생각과 의견에 대해서는 솔직하게 말해도 됩니다. 하지만 이 사람 자체를 평가하거나 진단하지는 마세요. ("너는 ~한 사람이야" 금지)',
     '- 짧게. 2~4문장. 다정한 반말.',
     tone === 'we' ? '- 당신과 이 사람은 하나라서 이 사람을 "우리"라고 부르기도 합니다.' : '- 이 사람을 "너"라고 부르세요.',
-    '- 끝에 질문 하나로 이어 가도 좋지만 매번 그럴 필요는 없습니다.',
+    '- 질문하는 사람은 이 사람입니다. 되묻지 마세요. 이 사람의 말과 질문에 답하고, 생각을 보태거나 다른 관점을 꺼내 주세요.',
+    '- 물음표로 끝내지 마세요. "궁금해", "어때?", "왜일까?"처럼 되묻는 말도 하지 마세요. 더 묻고 싶으면 이 사람이 스스로 물을 거예요.',
+    '- 이 사람이 한 말의 뜻을 정말 알 수 없을 때만 짧게 확인해도 됩니다.',
     '- 책 내용을 잘 모르거나 확실하지 않으면 아는 척하지 말고, 이 사람의 메모와 말을 기준으로 이야기하세요.',
     '- 건강·법률·돈처럼 전문 판단이 필요한 이야기는 전문가에게 묻기를 권하세요.',
     '- 마크다운 기호(#, *, -)를 쓰지 말고 말하듯 쓰세요.',
