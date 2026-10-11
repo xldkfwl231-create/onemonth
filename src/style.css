@@ -723,3 +723,17 @@ body.night .backup-nudge{background:#3b3550;border-color:#7a5f8a;box-shadow:0 4p
 .seen-item:active{transform:none}
 .seen-item span{overflow-wrap:anywhere}
 .seen-item small{font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+
+/* ── 슬라임 다루는 법 ── */
+.guide summary{cursor:pointer;list-style:none;display:flex;align-items:center}
+.guide summary::-webkit-details-marker{display:none}
+.guide summary h2{margin:0}
+.guide summary::after{content:'펼치기';margin-left:auto;font-size:12px;color:var(--muted)}
+.guide[open] summary::after{content:'접기'}
+.guide h3{margin:14px 0 6px;font:400 14px var(--head);color:var(--mint-deep)}
+.guide dl{margin:0;display:grid;grid-template-columns:minmax(96px,34%) minmax(0,1fr);gap:6px 12px}
+.guide dt{font:400 13.5px/1.5 var(--head)}
+.guide dd{margin:0;font-size:13.5px;line-height:1.5;color:var(--ink)}
+/* ── 찾기 (생각 · 이야기) ── */
+.list-search{margin:0 0 16px}
+.list-search input{width:100%}

@@ -1,4 +1,4 @@
-const CACHE = 'reading-notebook-shell-v8-18';
+const CACHE = 'reading-notebook-shell-v8-19';
 const FILES = ['./','./index.html','./src/app.js','./src/core.js','./src/storage.js','./src/slime.js','./src/board.js','./vendor/three.module.min.js','./vendor/three.core.min.js','./src/style.css','./src/config.js','./icon.svg','./icon-192.png','./icon-512.png','./icon-maskable-512.png','./apple-touch-icon.png','./manifest.json'];
 self.addEventListener('install',event => { event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(FILES)).then(() => self.skipWaiting())); });
 self.addEventListener('activate',event => { event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k.startsWith('reading-notebook-shell-') && k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
