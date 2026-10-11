@@ -540,3 +540,14 @@ body.night .feed textarea::placeholder{color:#a79fcb}
 body[data-page=home] #toast,body[data-page=home] #usage-pill{bottom:calc(160px + env(safe-area-inset-bottom))}
 .q-actions button:not(.talk-btn),.tl .q-actions button:not(.talk-btn){padding:4px 8px}
 .book-hero .talk-btn{justify-content:center}
+/* 좁은 화면: 대화가 가운데로 몰리지 않게 — 여백을 줄이고 말풍선을 넓게 */
+@media (max-width:759px){
+  body.desk-on .shell{padding-left:8px;padding-right:8px}
+  .desk .talk-log,body.pc .desk .talk-log{padding:14px 10px}
+  .desk .talk-head{padding:10px 12px 8px}
+  .talk-msg,.desk .talk-msg{max-width:96%;gap:6px}
+  .talk-msg.me,.desk .talk-msg.me{max-width:86%}
+  .talk-msg.slime svg{width:26px;height:26px;flex:0 0 26px}
+  .desk .talk-title{order:2;flex:1 1 100%;font-size:18px}
+  .desk .talk-tools{order:1;margin-left:auto}
+}
