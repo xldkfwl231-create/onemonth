@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalize, backup, matchesBook, dateLabel, dayKey, safeCover, emptyState, nextQuestion, dayOf } from '../src/core.js';
+import { normalize, backup, matchesBook, dateLabel, dayKey, safeCover, emptyState, nextQuestion, dayOf, boardGraph } from '../src/core.js';
 const old = () => ({books:[{t:'독서의 기술',s:'8/1',e:[{l:'오래 남은 문장',d:'8/2'}]}],thoughts:[{t:'생각',d:'8/3'}],trips:[{p:'통영',n:'바다'}],cur:0});
 test('legacy migration preserves every record, original dates and original input',() => {
   const input = old(), copy = structuredClone(input), s = normalize(input);
@@ -95,4 +95,19 @@ test('answers to the slime keep added lines, and a talk can start from an answer
   assert.equal(s.answers[0].more[0].text, '이야기해 보니 사실 피곤했다');
   assert.equal(s.chats[0].topic.kind, 'answer');
   assert.deepEqual(normalize(JSON.parse(backup(s))), s);
+});
+
+test('the record map links records to their tags and books, and questions to the sentence they came from', () => {
+  const s = normalize({ version: 3, profile: { catName: '', tone: 'we', aiConsentAt: '' }, moments: [],
+    books: [{ id: 'b', title: '책', status: 'reading', entries: [{ id: 'e', text: '문장' }], questions: [{ id: 'q', text: '왜?', from: 'e' }, { id: 'q2', text: '어떻게?' }] }],
+    thoughts: [{ id: 't', text: '생각' }, { id: 't2', text: '다른 생각' }], answers: [{ id: 'a', prompt: '오늘은?', text: '좋았다' }],
+    readings: { t: { tags: ['몰입'] }, a: { tags: ['몰입', '혼자'] }, e: { tags: ['관찰'] } },
+    chats: [{ id: 'c', topic: { kind: 'thought', ref: 't' }, messages: [{ role: 'user', text: '음' }, { role: 'assistant', text: '응' }] }] });
+  const g = boardGraph(s), node = id => g.nodes.find(n => n.id === id), linked = (a, b) => g.links.some(l => l.s === a && l.t === b);
+  assert.equal(node('tag:몰입').count, 2);
+  assert.ok(linked('t', 'tag:몰입') && linked('a', 'tag:혼자') && linked('e', 'tag:관찰'));
+  assert.ok(linked('e', 'book:b') && linked('q', 'e') && linked('q2', 'book:b'));
+  assert.equal(node('t').talk, 2);
+  assert.ok(!g.links.some(l => l.s === 't2'));   // 주제어가 아직 없는 생각은 홀로
+  assert.equal(g.nodes.length, 3 + 1 + 2 + 1 + 3);
 });

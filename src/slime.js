@@ -6,7 +6,9 @@ import * as THREE from '../vendor/three.module.min.js';
 
 export const DEFAULT_LOOK = { color: '#a9d3a4', clarity: 0.62, firmness: 42, damping: 4.2 };
 
-export function mountSlime(container, { look = {}, onPoke = () => {}, onBead = () => {}, onDoubleTap = () => {}, reduced = false } = {}) {
+export function mountSlime(container, { look = {}, onPoke = () => {}, onBead = () => {}, onDoubleTap = () => {}, onSwell = () => {}, onPop = () => {}, reduced = false } = {}) {
+  // 꾹 누르고 있으면 부풀다가(swell 0→1) 터집니다 — 터지면 기록 지도가 펼쳐져요
+  const HOLD = 0.75, FULL = 1.4; let swell = 0, popped = false, popT = 0, swellSaid = false;
   look = { ...DEFAULT_LOOK, ...look };
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'low-power' });
   renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
@@ -282,9 +284,11 @@ export function mountSlime(container, { look = {}, onPoke = () => {}, onBead = (
     pointers.delete(e.pointerId);
     if (pinch) { if (pointers.size < 2) pinch = null; return; }
     if (!down) return;
+    if (popped) { down = null; pressing = null; return; }
     if (!down.moved && down.hit) {
       awakeUntil = performance.now() + 6000;
-      if (pressing) { impulse(pressing, -1.2); squish(1, -1.2); pokes++; onPoke(pokes); }
+      if (swell > 0.02) { squish(1, -1.1); wobble(0, 0, 0); }   // 터지기 전에 놓으면 푸슉 줄어들기만
+      else if (pressing) { impulse(pressing, -1.2); squish(1, -1.2); pokes++; onPoke(pokes); }
       else {
         const now = performance.now();
         if (now - lastTap < 320) { lastTap = 0; onDoubleTap(); }       // 두 번 톡 → 기록하기
@@ -313,7 +317,13 @@ export function mountSlime(container, { look = {}, onPoke = () => {}, onBead = (
   function step(dt) {
     const k = look.firmness, c = look.damping, couple = 18;
     const dragging = !!(down?.moved && down.hit);
-    if (down && !down.moved && down.hit && performance.now() - down.t > 160) pressing = down.hit;
+    const held = down && !down.moved && down.hit && !popped ? (performance.now() - down.t) / 1000 : 0;
+    if (held > HOLD) {
+      pressing = null; swell = Math.min(1, (held - HOLD) / FULL);
+      if (!swellSaid && swell > 0.15) { swellSaid = true; onSwell(); }
+      if (swell >= 1) { popped = true; popT = 0; down = null; onPop(); }
+    } else if (!popped) { swell = Math.max(0, swell - dt * 2.5); if (!swell) swellSaid = false; }
+    if (down && !down.moved && down.hit && held <= HOLD && performance.now() - down.t > 160) pressing = down.hit;
     if (pressing) { impulse(pressing, 0.35 * dt * 8, 0.45); squish(1, 0.9 * dt * 4); }
     // 늘어남 되돌아오기 (덜 감쇠시켜 몇 번 출렁이게)
     if (!dragging) { pullV.addScaledVector(pull, -k * 1.3 * dt).addScaledVector(pullV, -c * 0.75 * dt); pull.addScaledVector(pullV, dt); if (pull.lengthSq() < 1e-6 && pullV.lengthSq() < 1e-6) { pull.set(0, 0, 0); pullV.set(0, 0, 0); } }
@@ -360,7 +370,11 @@ export function mountSlime(container, { look = {}, onPoke = () => {}, onBead = (
     for (let a = 0; a < 3; a++) { sqv[a] += (-k * 0.9 * (sq[a] - 1) - c * 1.4 * sqv[a]) * dt; sq[a] = THREE.MathUtils.clamp(sq[a] + sqv[a] * dt, 0.55, 1.4); }
     const breathe = reduced ? 0 : Math.sin(performance.now() / 1900) * 0.012;
     const sy = sq[1] + breathe;
-    group.scale.set(BASE * sq[0], BASE * sy, BASE * sq[2]);
+    // 부풀기: 커지면서 바르르 떨고, 터지면 순식간에 사라짐
+    const tremble = swell > 0.35 && !reduced ? Math.sin(performance.now() / 24) * 0.025 * swell : 0;
+    let grow = 1 + swell * 0.38 + tremble;
+    if (popped) { popT += dt; grow = Math.max(0, (1.38 + popT * 6) * (1 - popT / 0.16)); }
+    group.scale.set(BASE * sq[0] * grow, BASE * sy * grow, BASE * sq[2] * grow);
     group.quaternion.copy(tumble);
     group.position.set(at.x, FLOOR + 0.5 * BASE * sy + at.y, at.z);
     // 얼굴: 흔들림과 늘어남을 따라감, 눈은 가끔 깜빡
@@ -417,6 +431,8 @@ export function mountSlime(container, { look = {}, onPoke = () => {}, onBead = (
     stretch(x = 1.2, y = 0.3, z = 0) { tmp.set(0.2, 0.3, 0.9).normalize(); grab({ local: tmp.clone(), push: tmp.clone().negate(), world: body.localToWorld(tmp.clone()) }); pull.set(x, y, z); pullV.set(0, 0, 0); },   // 확인용
     throw(x = 4, z = 0) { go.set(x, Math.min(3.4, Math.hypot(x, z) * 0.5), z); at.y = 0.02; spinAxis.set(0, 1, 0).cross(go).normalize(); spinRate = Math.min(9, go.length() * 1.3); },   // 확인용
     setBeads,
+    pop() { if (!popped) { popped = true; popT = 0; down = null; onPop(); } },   // 지도 단추 · 확인용
+    swelling: () => +swell.toFixed(2),
     beadCount() { return { total: beads.length, falling: beads.filter(b => b.falling).length }; },   // 확인용
     setNight(on) {
       night = !!on;

@@ -135,3 +135,21 @@ export function nextQuestion(state, now = new Date(), skipped = []) {
     return { slot: 'prompt', title: '오늘의 물음', type: 'moment', text: custom || PROMPTS[Number(date.replaceAll('-', '')) % PROMPTS.length][tone] };
   return null;
 }
+
+// 기록 지도: 기록은 점, 주제어와 책은 큰 점. 기록은 자기 주제어(슬라임이 붙인 것)와 책에 이어지고,
+// 문장에서 생긴 질문은 그 문장에 이어집니다. 이야기를 나눈 기록에는 마디 수가 붙습니다.
+export function boardGraph(s) {
+  const nodes = [], links = [], tags = new Map(), talk = new Map();
+  for (const c of s.chats || []) if (c.messages.length) talk.set(c.topic.ref, (talk.get(c.topic.ref) || 0) + c.messages.length);
+  const tagged = id => { for (const t of s.readings?.[id]?.tags || []) { links.push({ s: id, t: 'tag:' + t, kind: 'tag' }); tags.set(t, (tags.get(t) || 0) + 1); } };
+  const rec = (kind, x, extra = {}) => nodes.push({ id: x.id, kind, label: x.text, at: x.createdAt || '', talk: talk.get(x.id) || 0, ...extra });
+  for (const b of s.books) {
+    nodes.push({ id: 'book:' + b.id, kind: 'book', label: b.title, ref: b.id, talk: talk.get(b.id) || 0 });
+    for (const e of b.entries) { rec('entry', e, { book: b.id }); links.push({ s: e.id, t: 'book:' + b.id, kind: 'book' }); tagged(e.id); }
+    for (const q of b.questions) { const from = q.from && b.entries.some(e => e.id === q.from); rec('question', q, { book: b.id }); links.push({ s: q.id, t: from ? q.from : 'book:' + b.id, kind: from ? 'from' : 'book' }); }
+  }
+  for (const t of s.thoughts) { rec('thought', t); tagged(t.id); }
+  for (const a of s.answers) { rec('answer', a, { prompt: a.prompt }); tagged(a.id); }
+  for (const [t, n] of tags) nodes.push({ id: 'tag:' + t, kind: 'tag', label: t, count: n });
+  return { nodes, links };
+}
