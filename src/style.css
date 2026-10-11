@@ -551,3 +551,65 @@ body[data-page=home] #toast,body[data-page=home] #usage-pill{bottom:calc(160px +
   .desk .talk-title{order:2;flex:1 1 100%;font-size:18px}
   .desk .talk-tools{order:1;margin-left:auto}
 }
+
+/* ── 이야기는 내가 먼저: 맨 위 주제 카드 ── */
+.talk-topic{align-self:stretch;background:var(--surface);border:3px solid var(--mint-line);border-radius:var(--r-s);padding:12px 16px 10px;margin-bottom:4px}
+.talk-topic.question{border-color:#c5d8ea}
+.talk-topic .mark{display:block;font:400 28px/.6 var(--head);color:var(--mint-deep);margin:6px 0 2px}
+.talk-topic.question .mark{color:var(--sky-ink);line-height:.9}
+.topic-src{display:block;color:var(--muted);font-size:12px;margin-bottom:2px}
+.topic-text{margin:0 0 4px;font:400 16.5px/1.65 var(--head);white-space:pre-wrap;overflow-wrap:anywhere;word-break:keep-all}
+.topic-text small{font:400 12px var(--body);color:var(--muted)}
+.topic-hint{margin:8px 0 2px;font-size:13px;color:var(--muted)}
+.talk-topic.free{border-style:dashed;text-align:center}
+.talk-topic.free .topic-hint{margin:0}
+.talk-msg .who{display:none}
+
+/* ── PC 서재: 가운데는 말풍선 대신 공책 대화록, 왼쪽은 기록, 오른쪽은 남길 말 ── */
+.desk .talk-msg,.desk .talk-msg.me{display:block;max-width:none;align-self:stretch}
+.desk .talk-msg svg{display:none}
+.desk .talk-msg p,.desk .talk-msg.slime p,.desk .talk-msg.me p{background:none;border:0;border-radius:0;padding:0;color:var(--ink)}
+.desk .talk-msg .who{display:block;font:400 13px var(--head);margin-bottom:2px}
+.desk .talk-msg.slime .who{color:var(--mint-deep)}
+.desk .talk-msg.me .who{color:#a9705a}
+.desk .talk-msg.typing p{padding:4px 0}
+.desk .talk-log{gap:18px}
+.desk .talk-log > *{width:100%;max-width:720px;margin-inline:auto}
+.talk-nav{display:flex;flex-direction:column;gap:4px;min-height:0}
+.talk-nav h3{font:400 13px var(--head);color:var(--muted);margin:14px 4px 4px}
+.talk-nav h3:first-child{margin-top:0}
+.nav-rec{display:flex;align-items:flex-start;gap:7px;width:100%;min-height:0;padding:7px 9px;text-align:left;border:2px solid transparent;border-radius:12px;background:transparent;box-shadow:none;font:400 13px/1.45 var(--body);color:var(--ink)}
+.nav-rec:hover{background:var(--surface);border-color:var(--line)}
+.nav-rec:active{transform:none}
+.nav-rec.on{background:var(--mint-pale);border-color:var(--mint-line)}
+.nav-rec .m{flex:0 0 20px;height:20px;border-radius:6px;background:var(--surface);font:400 11.5px/20px var(--head);color:var(--mint-deep);text-align:center}
+.nav-rec.on .m{background:var(--mint);color:#1f3d27}
+.nav-rec .t{flex:1;min-width:0;overflow-wrap:anywhere}
+.nav-rec small{flex:0 0 auto;font-size:11px;color:var(--mint-deep)}
+.keep-pane{display:none}
+.keep-pane h3,.ctx-more h3{font:400 14px var(--head);color:var(--muted);margin:0 0 8px}
+.keep-where{display:flex;flex-direction:column;gap:4px;margin-bottom:8px}
+.keep-where label{display:flex;gap:6px;align-items:center;margin:0;font-size:13px;color:var(--ink)}
+.keep-where input{width:16px;height:16px;min-height:0;accent-color:var(--mint-deep)}
+.keep-where.one{margin:0 0 8px;font-size:13px;color:var(--mint-deep)}
+#keep-text{width:100%;min-height:96px;resize:vertical;font-size:14px;line-height:1.6;border:2px dashed var(--mint-line);border-radius:12px;padding:9px 11px;background:var(--surface)}
+.keep-mine{display:flex;flex-wrap:wrap;gap:5px;margin:8px 0}
+.keep-mine .chip{min-height:0;padding:4px 9px;border:2px solid var(--line);border-radius:999px;box-shadow:none;background:var(--surface);font:400 12px/1.4 var(--body);color:var(--ink);text-align:left}
+.keep-mine .chip:hover{border-color:var(--mint)}
+.keep-save{width:100%;min-height:42px;margin-top:4px}
+.keep-save .k{font:400 11px var(--body);opacity:.7;margin-left:4px}
+.kept{display:flex;flex-direction:column;gap:6px}
+.kept p{margin:0;padding:7px 10px;border-left:4px solid var(--mint-line);background:var(--surface);border-radius:0 10px 10px 0;font-size:13px;white-space:pre-wrap;overflow-wrap:anywhere}
+.kept small{display:block;font-size:11px;color:var(--muted);margin-top:2px}
+.keep-pane h3 + .kept,.keep-pane .kept{margin-bottom:6px}
+.keep-pane > h3:not(:first-child){margin-top:16px}
+@media (min-width:760px){
+  .desk{grid-template-columns:minmax(0,1fr) 300px}
+  .desk .keep-pane{display:flex;flex-direction:column;margin-bottom:18px}
+  .desk .talk-tools [data-action=talk-keep]{display:none}
+  .desk .ctx-more .ctx-focus{display:none}
+}
+@media (min-width:1100px){
+  .desk{grid-template-columns:250px minmax(0,1fr) 320px}
+  .desk .talk-side{background:var(--peach);border-radius:var(--r);padding:12px 10px}
+}
