@@ -3,7 +3,7 @@ import { mountSlime } from './slime.js';
 import { openStore, load, commit, previous } from './storage.js';
 import { BOOK_SEARCH_ENDPOINT, AI_ENDPOINT, AI_REFLECT_ENDPOINT, AI_CHAT_ENDPOINT } from './config.js';
 
-const BUILD = '1012f';   // 폰에서 어떤 판을 보고 있는지 확인용
+const BUILD = '1012g';   // 폰에서 어떤 판을 보고 있는지 확인용
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 let state = emptyState(), db, revision = 0, busy = false, ready = false;
@@ -482,13 +482,32 @@ function talkName(c) {
   if (c.topic.kind === 'free') return c.messages.find(m => m.role === 'user')?.text.slice(0, 40) || '새 이야기';
   return cut60(c.topic.title || '');
 }
+// 이야기의 주제 글 전체 — 자르지 않습니다 (지워졌으면 저장해 둔 제목)
+function talkFull(c) {
+  const { book, item } = talkSubject(c);
+  if (c.topic.kind === 'book') return book?.title || c.topic.title || '';
+  if (c.topic.kind === 'answer') return item?.prompt || c.topic.title || '';
+  return item?.text || c.topic.title || '';
+}
 function talkOpener(c) {
-  const we = state.profile.tone !== 'you', { book } = talkSubject(c), t = cut60(c.topic.title || '');
+  const we = state.profile.tone !== 'you', { book } = talkSubject(c), t = talkFull(c);
   if (c.topic.kind === 'book') return `『${t}』 얘기 하자. 어떤 게 마음에 남았어?`;
-  if (c.topic.kind === 'entry') return `${book ? `『${book.title}』의 ` : ''}“${t}” 이 문장, 어디가 마음에 걸렸어?`;
-  if (c.topic.kind === 'question') return `“${t}” 이 질문, ${we ? '우리' : '너랑'} 같이 붙잡아 볼까?`;
-  if (c.topic.kind === 'thought') return `“${t}” 이 생각, ${we ? '우리' : '너랑'} 같이 더 들여다볼까?`;
-  if (c.topic.kind === 'answer') return `내가 “${t}” 하고 물었던 거, 그 답 ${we ? '우리' : '너랑'} 조금 더 들여다볼까?`;
+  if (c.topic.kind === 'entry') return `${book ? `『${book.title}』에서 고른 문장이야.
+
+` : ''}“${t}”
+
+이 문장, 어디가 마음에 걸렸어?`;
+  if (c.topic.kind === 'question') return `“${t}”
+
+이 질문, ${we ? '우리' : '너랑'} 같이 붙잡아 볼까?`;
+  if (c.topic.kind === 'thought') return `“${t}”
+
+이 생각, ${we ? '우리' : '너랑'} 같이 더 들여다볼까?`;
+  if (c.topic.kind === 'answer') return `내가 이렇게 물었지.
+
+“${t}”
+
+그 답, ${we ? '우리' : '너랑'} 조금 더 들여다볼까?`;
   return '무슨 얘기부터 할까? 책이든 요즘 생각이든 다 좋아.';
 }
 // 슬라임에게 보낼 배경 — 내가 쓴 것. 문장 하나를 골라 이야기할 때만 그 문장을 함께 보냅니다.
@@ -603,7 +622,7 @@ function renderTalk(id) {
   $('#main').innerHTML = `<div class="talk-desk ${wide ? 'desk' : ''}">
     <aside class="talk-side" aria-label="이야기 목록"><div class="talk-side-head"><a class="back" href="#talk">← 이야기</a><button class="primary" data-action="talk-free">＋ 새 이야기</button></div><div class="talk-list">${talkListHtml(id)}</div></aside>
     <section class="talk" aria-label="이야기">
-      <div class="talk-head"><a class="back talk-back" href="${home.href}">${home.label}</a><h1 class="talk-title"><span class="status-tag">${talkKind[c.topic.kind]}</span>${esc(c.topic.kind === 'free' ? `${name}과 이야기` : talkName(c))}</h1><div class="talk-tools">${c.messages.some(m => m.role === 'user') ? `<button class="quiet" data-action="talk-keep">${keepLabel(c)}</button>` : ''}<button class="tool ctx-toggle" data-action="talk-ctx" aria-pressed="${ctxOpen}" aria-label="이야기의 배경 보기" title="배경 보기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h11l3 3v13H5z M9 10h7 M9 14h7" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></button><button class="tool" data-action="pc-mode" aria-pressed="${pc}" aria-label="PC 모드 ${pc ? '끄기' : '켜기'}" title="PC 모드"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14v9H5z M3 18h18" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg><span>PC</span></button></div></div>
+      <div class="talk-head"><a class="back talk-back" href="${home.href}">${home.label}</a><h1 class="talk-title"><span class="status-tag">${talkKind[c.topic.kind]}</span><span class="title-text" title="눌러서 전체 보기">${esc(c.topic.kind === 'free' ? `${name}과 이야기` : talkFull(c))}</span></h1><div class="talk-tools">${c.messages.some(m => m.role === 'user') ? `<button class="quiet" data-action="talk-keep">${keepLabel(c)}</button>` : ''}<button class="tool ctx-toggle" data-action="talk-ctx" aria-pressed="${ctxOpen}" aria-label="이야기의 배경 보기" title="배경 보기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h11l3 3v13H5z M9 10h7 M9 14h7" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></button><button class="tool" data-action="pc-mode" aria-pressed="${pc}" aria-label="PC 모드 ${pc ? '끄기' : '켜기'}" title="PC 모드"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14v9H5z M3 18h18" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg><span>PC</span></button></div></div>
       <div class="talk-log" id="talk-log">
         ${bubbleHtml('assistant', talkOpener(c))}
         ${c.messages.map(m => bubbleHtml(m.role, m.text)).join('')}
@@ -616,6 +635,7 @@ function renderTalk(id) {
     <aside class="talk-ctx" aria-label="이야기의 배경"><button class="quiet ctx-close" data-action="talk-ctx">닫기 ✕</button>${talkContextHtml(c)}</aside>
   </div>`;
   $('.talk-back').onclick = () => { if (home.tab) entryTab = home.tab; if (home.filter) talkFilter = home.filter; focusRec = c.topic.kind === 'book' || c.topic.kind === 'free' ? '' : c.topic.ref; };
+  $('.title-text').onclick = e => e.currentTarget.classList.toggle('open');   // 긴 문장은 두 줄까지, 누르면 전체
   const log = $('#talk-log'); if (log) { log.scrollTop = log.scrollHeight; log.lastElementChild?.scrollIntoView({ block: 'end' }); }
   const input = $('#talk-input');
   if (input) {
