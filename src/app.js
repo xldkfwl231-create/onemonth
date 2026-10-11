@@ -4,7 +4,7 @@ import { mountBoard, BOARD_COLORS } from './board.js';
 import { openStore, load, commit, previous } from './storage.js';
 import { BOOK_SEARCH_ENDPOINT, AI_ENDPOINT, AI_REFLECT_ENDPOINT, AI_CHAT_ENDPOINT } from './config.js';
 
-const BUILD = '1012k';   // 폰에서 어떤 판을 보고 있는지 확인용
+const BUILD = '1012l';   // 폰에서 어떤 판을 보고 있는지 확인용
 const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 // 이름 뒤 조사 — 받침이 있으면 이/과, 없으면 가/와 (뚱이가, 말랑이)
@@ -528,7 +528,7 @@ function talkSubject(c) {
 }
 function talkName(c) {
   if (c.topic.kind === 'free') return c.messages.find(m => m.role === 'user')?.text.slice(0, 40) || '새 이야기';
-  return cut60(c.topic.title || '');
+  return cut60(talkFull(c));   // 기록을 고쳤으면 고친 글로
 }
 // 이야기의 주제 글 전체 — 자르지 않습니다 (지워졌으면 저장해 둔 제목)
 function talkFull(c) {
@@ -568,9 +568,20 @@ async function startTalk(kind, ref = '', bookId = '') {
   const id = uid();
   if (await change(s => { s.chats.push({ id, createdAt: now(), topic: { kind, ref, book: bookId, title: (title || '').slice(0, 500) }, usage: { input: 0, output: 0 }, messages: [] }); }, '')) location.hash = `talk/${id}`;
 }
+const TRASH = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M10 7V4.5h4V7M7 7l1 13h8l1-13M10.5 11v5.5M13.5 11v5.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+// 이야기 지우기 — 이야기만 지우고, 이야기에서 기록에 남긴 말(덧붙임 · 지금의 답)은 그대로 둡니다. 되돌리기 가능
+async function deleteTalk(id) {
+  const i = state.chats.findIndex(c => c.id === id); if (i < 0) return;
+  const item = structuredClone(state.chats[i]), here = route().page === 'talk' && route().id === id, home = here ? talkHome(item) : null;
+  if (!await change(s => { s.chats = s.chats.filter(c => c.id !== id); }, '')) return;
+  if (here) location.hash = home.href.slice(1);
+  notice(`이야기를 지웠습니다.${item.messages.length ? ` (${item.messages.length}마디)` : ''}`, async () => {
+    if (await change(s => { if (!s.chats.some(c => c.id === id)) s.chats.splice(Math.min(i, s.chats.length), 0, item); }, '이야기를 되돌렸습니다.')) undoAction = null;
+  });
+}
 function talkListHtml(currentId, only) {
   const list = only || [...state.chats].sort((a, b) => lastAt(b) - lastAt(a));
-  return list.length ? list.map(c => { const last = c.messages[c.messages.length - 1]; return `<a class="talk-item ${c.id === currentId ? 'on' : ''}" href="#talk/${esc(c.id)}" ${c.id === currentId ? 'aria-current="page"' : ''}><span class="status-tag">${talkKind[c.topic.kind]}</span><b>${esc(talkName(c))}</b>${['entry', 'question'].includes(c.topic.kind) && talkSubject(c).book ? `<small class="from">『${esc(talkSubject(c).book.title)}』</small>` : ''}<small>${esc(last ? last.text.slice(0, 60) : '아직 아무 말도 안 했어요')}</small><small>${esc(dateLabel(c.createdAt))} · ${c.messages.length}마디</small></a>`; }).join('')
+  return list.length ? list.map(c => { const last = c.messages[c.messages.length - 1]; return `<div class="talk-row"><a class="talk-item ${c.id === currentId ? 'on' : ''}" href="#talk/${esc(c.id)}" ${c.id === currentId ? 'aria-current="page"' : ''}><span class="status-tag">${talkKind[c.topic.kind]}</span><b>${esc(talkName(c))}</b>${['entry', 'question'].includes(c.topic.kind) && talkSubject(c).book ? `<small class="from">『${esc(talkSubject(c).book.title)}』</small>` : ''}<small>${esc(last ? last.text.slice(0, 60) : '아직 아무 말도 안 했어요')}</small><small>${esc(dateLabel(c.createdAt))} · ${c.messages.length}마디</small></a><button class="talk-del" data-action="talk-delete" data-id="${esc(c.id)}" aria-label="이 이야기 지우기" title="이야기 지우기">${TRASH}</button></div>`; }).join('')
     : empty('아직 나눈 이야기가 없어요', '책·문장·질문·생각에서 "이야기하기"를 누르거나, 새 이야기로 시작해 보세요.');
 }
 // PC 모드 — 폰을 노트북에 연결해 이야기할 때. 이 기기에만 기억합니다. (예전 'Enter로 보내기'를 켜 두었으면 켠 것으로)
@@ -591,7 +602,7 @@ function renderTalks() {
   const name = state.profile.catName || '슬라임';
   // 답으로 시작한 이야기는 그 답 카드 안의 '이야기 이어가기'로 들어갑니다 (답이 지워졌으면 이야기 카드로)
   const items = [
-    ...state.chats.filter(c => c.topic.kind !== 'answer' || !state.answers.some(a => a.id === c.topic.ref)).map(c => ({ lane: LANE[c.topic.kind], at: lastAt(c), html: () => talkListHtml('', [c]) })),
+    ...state.chats.filter(c => c.messages.length && (c.topic.kind !== 'answer' || !state.answers.some(a => a.id === c.topic.ref))).map(c => ({ lane: LANE[c.topic.kind], at: lastAt(c), html: () => talkListHtml('', [c]) })),
     ...state.answers.map(a => { const c = talkOf('answer', a.id); return { lane: 'ask', at: Math.max(Date.parse(a.createdAt) || 0, c ? lastAt(c) : 0), html: () => askCard(a) }; })
   ].sort((x, y) => y.at - x.at);
   const count = k => items.filter(x => k === 'all' || x.lane === k).length;
@@ -599,7 +610,7 @@ function renderTalks() {
   const lanes = [['all', '전체'], ['book', '책'], ['thought', '생각'], ...(state.answers.length ? [['ask', `${name}의 물음`]] : [])];
   if (talkFilter === 'ask' && !state.answers.length) talkFilter = 'all';
   const none = { all: ['아직 주고받은 게 없어요', '책·문장·질문·생각에서 "이야기하기"를 누르거나, ＋ 새 이야기로 시작해 보세요.'], book: ['책 이야기가 아직 없어요', '책장에서 문장이나 질문을 열고 "이야기하기"를 눌러 보세요.'], thought: ['생각 이야기가 아직 없어요', '생각 탭에서 "이야기하기"를 누르거나, 새 이야기로 시작해 보세요.'], ask: ['아직 답한 물음이 없어요', '첫 화면의 물음표를 누르면 오늘의 물음이 있습니다.'] }[talkFilter];
-  $('#main').innerHTML = `<div class="narrow"><div class="intro"><div><h1>이야기</h1><p>${esc(wa(name))} 주고받은 것 — 내가 꺼낸 이야기와, ${esc(ig(name))} 물어 내가 한 답.</p></div><button class="primary intro-actions" data-action="talk-free">＋ 새 이야기</button></div><div class="toolbar"><div class="filters" aria-label="이야기 갈래">${lanes.map(([v, l]) => `<button data-talk-filter="${v}" aria-pressed="${talkFilter === v}">${esc(l)} <small>${count(v)}</small></button>`).join('')}</div></div><div class="talk-list">${shown.length ? shown.map(x => x.html()).join('') : empty(...none)}</div></div>`;
+  $('#main').innerHTML = `<div class="narrow"><div class="intro"><div><h1>이야기</h1><p>${esc(wa(name))} 주고받은 것 — 내가 꺼낸 이야기${state.answers.length ? `와, ${esc(ig(name))} 물어 내가 한 답` : ''}.</p></div><button class="primary intro-actions" data-action="talk-free">＋ 새 이야기</button></div><div class="toolbar"><div class="filters" aria-label="이야기 갈래">${lanes.map(([v, l]) => `<button data-talk-filter="${v}" aria-pressed="${talkFilter === v}">${esc(l)} <small>${count(v)}</small></button>`).join('')}</div></div><div class="talk-list">${shown.length ? shown.map(x => x.html()).join('') : empty(...none)}</div></div>`;
   focusRecord();
 }
 // 오른쪽 배경 칸 — 무엇에 대해 이야기하는지, 내가 그 주제에 적어 둔 것들. 누르면 입력칸에 인용됩니다.
@@ -663,7 +674,7 @@ function renderTalk(id) {
   $('#main').innerHTML = `<div class="talk-desk ${wide ? 'desk' : ''}">
     <aside class="talk-side" aria-label="이야기 목록"><div class="talk-side-head"><a class="back" href="#talk">← 이야기</a><button class="primary" data-action="talk-free">＋ 새 이야기</button></div><nav class="talk-nav" aria-label="기록">${talkNavHtml(c)}</nav></aside>
     <section class="talk" aria-label="이야기">
-      <div class="talk-head"><a class="back talk-back" href="${home.href}">${home.label}</a><h1 class="talk-title"><span class="status-tag">${talkKind[c.topic.kind]}</span><span class="title-text" title="눌러서 전체 보기">${esc(c.topic.kind === 'free' ? `${wa(name)} 이야기` : talkFull(c))}</span></h1><div class="talk-tools">${c.messages.some(m => m.role === 'user') ? `<button class="quiet" data-action="talk-keep">${keepLabel(c)}</button>` : ''}<button class="tool ctx-toggle" data-action="talk-ctx" aria-pressed="${ctxOpen}" aria-label="이야기의 배경 보기" title="배경 보기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h11l3 3v13H5z M9 10h7 M9 14h7" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></button><button class="tool" data-action="pc-mode" aria-pressed="${pc}" aria-label="PC 모드 ${pc ? '끄기' : '켜기'}" title="PC 모드"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14v9H5z M3 18h18" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg><span>PC</span></button></div></div>
+      <div class="talk-head"><a class="back talk-back" href="${home.href}">${home.label}</a><h1 class="talk-title"><span class="status-tag">${talkKind[c.topic.kind]}</span><span class="title-text" title="눌러서 전체 보기">${esc(c.topic.kind === 'free' ? `${wa(name)} 이야기` : talkFull(c))}</span></h1><div class="talk-tools">${c.messages.some(m => m.role === 'user') ? `<button class="quiet" data-action="talk-keep">${keepLabel(c)}</button>` : ''}${c.messages.length ? `<button class="tool talk-del-tool" data-action="talk-delete" data-id="${esc(c.id)}" aria-label="이 이야기 지우기" title="이야기 지우기">${TRASH}</button>` : ''}<button class="tool ctx-toggle" data-action="talk-ctx" aria-pressed="${ctxOpen}" aria-label="이야기의 배경 보기" title="배경 보기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h11l3 3v13H5z M9 10h7 M9 14h7" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></button><button class="tool" data-action="pc-mode" aria-pressed="${pc}" aria-label="PC 모드 ${pc ? '끄기' : '켜기'}" title="PC 모드"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14v9H5z M3 18h18" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg><span>PC</span></button></div></div>
       <div class="talk-log" id="talk-log">
         ${talkTopicCard(c)}
         ${c.messages.map(m => bubbleHtml(m.role, m.text)).join('')}
@@ -907,6 +918,7 @@ document.addEventListener('click', e => {
     case 'talk-question': talkFocus = true; startTalk('question', id, book); break;
     case 'talk-quote': { if (ctxOpen) { ctxOpen = false; document.body.classList.remove('ctx-open'); $('[data-action=talk-ctx]')?.setAttribute('aria-pressed', 'false'); } const el = $('#talk-input'); if (el) { el.value = (el.value ? el.value.replace(/\s*$/, '\n') : '') + `“${btn.dataset.text}” `; el.dispatchEvent(new Event('input')); el.focus(); } break; }
     case 'talk-keep': talkKeep(route().id); break;
+    case 'talk-delete': deleteTalk(id); break;
     case 'keep-save': keepFromPane(route().id); break;
     case 'keep-pick': { const c = state.chats.find(x => x.id === route().id), box = $('#keep-text'); if (c && box) { box.value = (box.value.trim() ? box.value.replace(/\s*$/, '\n') : '') + c.messages[+btn.dataset.i].text; keepDrafts[c.id] = box.value; box.focus(); } break; }
     case 'delete-more': deleteMore(id); break;

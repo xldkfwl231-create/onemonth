@@ -657,3 +657,12 @@ body[data-page=board] .shell{padding:0}
 @media (min-width:900px){
   .board-card{left:auto;right:20px;top:calc(110px + env(safe-area-inset-top));bottom:calc(96px + env(safe-area-inset-bottom));width:340px;max-height:none}
 }
+
+/* ── 이야기 지우기 ── */
+.talk-row{position:relative}
+.talk-row .talk-item{padding-right:52px}
+.talk-del{position:absolute;top:10px;right:10px;width:38px;height:38px;min-height:0;padding:0;display:grid;place-items:center;border:0;border-radius:12px;background:transparent;box-shadow:none;color:var(--muted)}
+.talk-del:hover{background:#fde8e4;color:var(--danger)}
+.talk-del:active{transform:none}
+.talk-del svg,.talk-del-tool svg{width:19px;height:19px}
+.talk-tools .talk-del-tool{color:var(--muted)}
