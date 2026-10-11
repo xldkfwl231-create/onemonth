@@ -140,7 +140,6 @@ body[data-page=home] .navigation a{flex:1;justify-content:center;padding:0 4px;f
 .slime-home{position:fixed;inset:0;z-index:0;background:radial-gradient(110% 60% at 50% 48%,#fffaf2 0%,var(--bg) 60%,#fbe9d6 100%);transition:background .8s}
 body.night{background:#2f2b3f}
 body.night .slime-home{background:radial-gradient(110% 60% at 50% 48%,#463f5e 0%,#2f2b3f 60%,#252233 100%)}
-body.night .ask-fab{background:#3b3550;border-color:#5a5275;box-shadow:0 5px 0 #5a5275;color:#cfc6f2}
 .slime-stage{position:absolute;inset:0}
 .slime-stage canvas{display:block;width:100%!important;height:100%!important;touch-action:none;cursor:grab}
 .slime-stage canvas:active{cursor:grabbing}
@@ -148,11 +147,6 @@ body.night .ask-fab{background:#3b3550;border-color:#5a5275;box-shadow:0 5px 0 #
 .slime-say.show{opacity:1;transform:translate(-50%,0)}
 .slime-say::after{content:'';position:absolute;bottom:-8px;left:50%;width:12px;height:12px;margin-left:-6px;background:var(--surface);border:3px solid var(--line);border-width:0 3px 3px 0;transform:rotate(45deg)}
 .home-bubble{position:absolute;left:16px;right:16px;bottom:calc(148px + env(safe-area-inset-bottom));z-index:2;max-width:440px;margin:0 auto}
-.ask-fab{position:absolute;right:18px;bottom:calc(92px + env(safe-area-inset-bottom));z-index:3;width:46px;height:46px;min-height:0;padding:0;border-radius:50%;display:grid;place-items:center;background:var(--surface);border:3px solid var(--mint-line);box-shadow:0 5px 0 var(--mint-line);color:var(--mint-deep)}
-.ask-fab svg{width:24px;height:24px}
-.ask-fab.open{background:var(--mint);border-color:var(--mint-deep);box-shadow:0 5px 0 var(--mint-deep);color:#1f3d27}
-.ask-fab:active{transform:translateY(4px);box-shadow:0 1px 0 var(--mint-line)}
-.ask-dot{position:absolute;top:-3px;right:-3px;width:13px;height:13px;border-radius:50%;background:var(--warm-ink);border:3px solid var(--bg)}
 .bubble::after{content:'';position:absolute;right:24px;bottom:-10px;width:16px;height:16px;background:var(--surface);border:3px solid var(--mint-line);border-width:0 3px 3px 0;transform:rotate(45deg)}
 .bubble{position:relative;padding:16px 18px 8px;background:var(--surface);border:3px solid var(--mint-line);border-radius:var(--r);box-shadow:var(--pop) var(--mint-line)}
 .bubble.done{padding-bottom:4px}
@@ -283,7 +277,6 @@ main{padding-top:14px}
 body.night .navigation{background:#3b3550;border-color:#5a5275;box-shadow:0 6px 0 #5a5275,0 12px 30px rgba(0,0,0,.3)}
 body.night .navigation a{color:#bdb4e0}
 body.night .navigation a[aria-current=page]{background:#56497a;color:#fff3e6}
-.ask-fab{bottom:calc(104px + env(safe-area-inset-bottom))}
 .home-bubble{bottom:calc(160px + env(safe-area-inset-bottom))}
 #toast,body[data-page=home] #toast{bottom:calc(104px + env(safe-area-inset-bottom))}
 @media(max-width:760px){.shell{padding-bottom:calc(112px + env(safe-area-inset-bottom))}}
@@ -521,3 +514,29 @@ details.then small{display:block;font-size:11px}
   .talk-title{order:2;flex:1 1 100%;margin:2px 0 12px;font-size:20px}
   .desk .talk-title{margin:0}
 }
+
+/* ── 카드의 이야기하기: 왼쪽에 민트 단추로 ── */
+.q-actions{opacity:1;align-items:center}
+.q-actions button{opacity:.75}
+.q-actions .talk-btn,.tl .q-actions .talk-btn{opacity:1;margin-right:auto;display:inline-flex;align-items:center;gap:5px;min-height:38px;padding:5px 14px 5px 11px;border-radius:999px;background:var(--mint-pale);border:2px solid var(--mint-line);box-shadow:0 3px 0 var(--mint-line);color:#2f5a3a;font:400 13.5px var(--head)}
+.q-actions .talk-btn svg{width:17px;height:17px;flex:0 0 auto}
+.q-actions .talk-btn:active{transform:translateY(2px);box-shadow:0 1px 0 var(--mint-line)}
+.q-actions .talk-btn.talked{background:var(--mint);border-color:var(--mint-deep);box-shadow:0 3px 0 var(--mint-deep);color:#1f3d27;font-weight:400}
+.book-hero .talk-btn{display:inline-flex;align-items:center;gap:6px}
+.book-hero .talk-btn svg{width:19px;height:19px}
+
+/* ── 첫 화면: 생각 먹이기 ── */
+.feed{position:absolute;left:14px;right:14px;bottom:calc(92px + env(safe-area-inset-bottom));z-index:3;max-width:520px;margin:0 auto;display:flex;gap:8px;align-items:flex-end;padding:6px 6px 6px 8px;background:var(--surface);border:3px solid var(--line);border-radius:24px;box-shadow:0 5px 0 var(--line),0 10px 26px rgba(74,60,49,.12)}
+.feed textarea{flex:1;min-height:42px;max-height:150px;resize:none;border:0;padding:9px 8px;background:transparent;font-size:15px;line-height:1.5;color:var(--ink)}
+.feed textarea:focus{border:0;outline:none}
+.feed:focus-within{border-color:var(--mint-deep);box-shadow:0 5px 0 var(--mint-deep),0 10px 26px rgba(74,60,49,.14)}
+.feed button{flex:0 0 auto;width:44px;min-height:44px;padding:0;border-radius:50%;display:grid;place-items:center;opacity:.55}
+.feed.has-text button{opacity:1}
+.feed button svg{width:22px;height:22px}
+body.night .feed{background:#3b3550;border-color:#5a5275;box-shadow:0 5px 0 #5a5275,0 10px 26px rgba(0,0,0,.3)}
+body.night .feed textarea{color:#f3ecff}
+body.night .feed textarea::placeholder{color:#a79fcb}
+.home-bubble{bottom:calc(170px + env(safe-area-inset-bottom))}
+body[data-page=home] #toast,body[data-page=home] #usage-pill{bottom:calc(160px + env(safe-area-inset-bottom))}
+.q-actions button:not(.talk-btn),.tl .q-actions button:not(.talk-btn){padding:4px 8px}
+.book-hero .talk-btn{justify-content:center}

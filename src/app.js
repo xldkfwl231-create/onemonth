@@ -1,9 +1,9 @@
-import { uid, now, emptyState, normalize, backup, stats, matchesBook, dateLabel, safeCover, emptyUsage, dayOf, nextQuestion, isIso } from './core.js';
+import { uid, now, emptyState, normalize, backup, stats, matchesBook, dateLabel, safeCover, emptyUsage, dayOf, isIso } from './core.js';
 import { mountSlime } from './slime.js';
 import { openStore, load, commit, previous } from './storage.js';
 import { BOOK_SEARCH_ENDPOINT, AI_ENDPOINT, AI_REFLECT_ENDPOINT, AI_CHAT_ENDPOINT } from './config.js';
 
-const BUILD = '1012g';   // 폰에서 어떤 판을 보고 있는지 확인용
+const BUILD = '1012h';   // 폰에서 어떤 판을 보고 있는지 확인용
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 let state = emptyState(), db, revision = 0, busy = false, ready = false;
@@ -80,19 +80,28 @@ function spines(books) {
 // ── 슬라임 · 순간 ──────────────────────────────────────────
 const say = pair => pair[state.profile.tone === 'you' ? 1 : 0];
 const todayKey = () => dayOf(new Date());
-let slime = null, saidToday = new Set(), askOpen = false;   // 질문 상자가 펼쳐져 있는지
-// 오늘 넘어간 질문은 이 기기에만 잠깐 기억합니다 — 기록이 아니라서 데이터에 넣지 않습니다.
-const skipped = () => { try { return JSON.parse(localStorage.getItem(`cat-skip:${todayKey()}`) || '[]'); } catch { return []; } };
-function skip(slot) { try { localStorage.setItem(`cat-skip:${todayKey()}`, JSON.stringify([...skipped(), slot])); } catch {} renderHome(); }
-function bubble() {
-  if (!state.profile.catName) return `<div class="bubble"><p class="bubble-text">안녕. 나는 아직 이름이 없는 슬라임이야. 이름을 지어 줄래?</p><div class="bubble-actions"><button class="primary" data-action="profile">이름 지어 주기</button></div></div>`;
-  const q = nextQuestion(state, new Date(), skipped());
-  const past = state.answers.length ? `<a class="text-link past-link" href="#answers">지난 답 ${state.answers.length} ›</a>` : '';
-  if (!q) return `<div class="bubble done"><p class="bubble-text">${say(['오늘 물을 건 여기까지. 나머진 네가 적고 싶을 때.', '오늘 물을 건 여기까지야. 나머진 네가 적고 싶을 때.'])}</p>${past}</div>`;
-  const body = q.type === 'book'
-    ? `<div class="bubble-actions"><button class="primary" data-action="cat-book" data-book="${esc(q.bookId)}">문장 남기기</button></div>`
-    : `<div class="bubble-actions"><button class="primary" data-action="cat-answer" data-prompt="${esc(q.text)}">답할게</button>${past}</div>`;
-  return `<div class="bubble"><p class="bubble-slot">${esc(q.title)}</p><p class="bubble-text">${esc(q.text)}</p>${body}<button class="quiet skip-q" data-action="cat-skip" data-slot="${q.slot}">오늘은 넘어갈래</button></div>`;
+let slime = null, saidToday = new Set(), lastFed = '';   // lastFed: 방금 먹인 생각 — 주제어가 붙으면 맛을 말해 줍니다
+// 이름이 없을 때만 말풍선으로 이름을 묻습니다
+const nameBubble = () => state.profile.catName ? '' : `<div class="bubble"><p class="bubble-text">안녕. 나는 아직 이름이 없는 슬라임이야. 이름을 지어 줄래?</p><div class="bubble-actions"><button class="primary" data-action="profile">이름 지어 주기</button></div></div>`;
+// 생각 먹이기 — 주제 없이 떠오른 걸 적으면 생각 탭에 남고, 슬라임 안에 방울로 떨어집니다
+const feedDraft = { get: () => { try { return localStorage.getItem('feed-draft') || ''; } catch { return ''; } }, set: v => { try { v ? localStorage.setItem('feed-draft', v) : localStorage.removeItem('feed-draft'); } catch {} } };
+function feedHtml() {
+  const name = state.profile.catName || '슬라임';
+  return `<form class="feed" id="feed-form"><label class="visually-hidden" for="feed-input">${esc(name)}에게 먹일 생각</label><textarea id="feed-input" rows="1" maxlength="5000" placeholder="떠오른 생각을 적으면 ${esc(name)}이 먹어요">${esc(feedDraft.get())}</textarea><button class="primary" type="submit" aria-label="먹이기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V6M6.5 11.5 12 6l5.5 5.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button></form>`;
+}
+function wireFeed() {
+  const form = $('#feed-form'), input = $('#feed-input'); if (!form) return;
+  const grow = () => { input.style.height = 'auto'; input.style.height = Math.min(150, input.scrollHeight) + 'px'; form.classList.toggle('has-text', !!input.value.trim()); };
+  input.oninput = () => { feedDraft.set(input.value); grow(); }; grow();
+  input.onkeydown = e => { if (e.key === 'Enter' && !e.isComposing && ((enterSendsPref() && !e.shiftKey) || e.ctrlKey || e.metaKey)) { e.preventDefault(); form.requestSubmit(); } };
+  form.onsubmit = async e => {
+    e.preventDefault(); const text = input.value.trim(); if (!text || busy) return;
+    const id = uid();
+    if (!await change(s => { s.thoughts.push({ id, createdAt: now(), text, more: [] }); }, '')) return;
+    input.value = ''; feedDraft.set(''); grow(); input.blur();   // 키보드를 내려 슬라임이 먹는 걸 보이게
+    lastFed = id;
+    showSay(say(['냠. 잘 먹었어. 생각 탭에 넣어 둘게.', '냠. 잘 먹었어. 생각 탭에 넣어 둘게.']));
+  };
 }
 // 슬라임이 가지고 놀 때 꺼내는 말. 지금은 지난 기록을 그대로 인용하고, 요약이 생기면 그걸로 바뀝니다.
 function sayLines() {
@@ -116,14 +125,6 @@ function maybeSay(pokes) {
   const line = lines[Math.floor(Math.random() * lines.length)]; saidToday.add(line);
   try { localStorage.setItem(`slime-said:${todayKey()}`, String(dayCount + 1)); } catch {}
   showSay(line);
-}
-// 물음표 단추: 물을 게 있으면 점이 켜지고, 누르면 질문 상자가 펼쳐집니다
-function syncAsk() {
-  const fab = $('#ask-fab'), box = $('#home-bubble'); if (!fab || !box) return;
-  const pending = !state.profile.catName || !!nextQuestion(state, new Date(), skipped());
-  if (!pending) askOpen = false;
-  box.hidden = !askOpen; fab.setAttribute('aria-expanded', String(askOpen)); fab.classList.toggle('open', askOpen);
-  fab.querySelector('.ask-dot').hidden = !pending || askOpen;
 }
 // 슬라임이 먹은 기록 — 생각, 책 문장, 슬라임에게 한 답. 오래된 것부터.
 // ── AI 사용량 ── 요청마다 아래에 잠깐 보여 주고, '나'에 모아 둡니다. 값은 Claude Haiku 5.5 기준 대략치.
@@ -183,6 +184,8 @@ async function readRecords() {
       addUsage(s, 'tags', body.usage);
     }, '');
     flashUsage('tags', body.usage);
+    const tag = lastFed && state.readings[lastFed]?.tags?.[0];
+    if (tag && route().page === 'home') { lastFed = ''; setTimeout(() => showSay(`음… #${tag} 맛이 나.`), 1200); }
   } catch { readBackoff = Date.now() + 5 * 60e3; }
   finally { reading = false; }
 }
@@ -278,16 +281,15 @@ function homeTop() {
 }
 function renderHome() {
   // 슬라임이 떠 있는 동안에는 말풍선만 바꿉니다 — 출렁이던 게 멈추지 않도록
-  if (slime && $('#slime-stage')) { $('#home-bubble').innerHTML = bubble(); syncAsk(); syncBeads(); $('#home-top').innerHTML = homeTop(); return; }
-  askOpen = !state.profile.catName;   // 처음 만날 때만 열어 둡니다
+  if (slime && $('#slime-stage')) { $('#home-bubble').innerHTML = nameBubble(); $('#home-bubble').hidden = !!state.profile.catName; syncBeads(); $('#home-top').innerHTML = homeTop(); return; }
   $('#main').innerHTML = `<section class="slime-home" aria-label="슬라임">
     <div class="home-top" id="home-top">${homeTop()}</div>
     <div class="slime-stage" id="slime-stage"><div class="slime-say" id="slime-say" role="status" hidden></div></div>
-    <div class="home-bubble" id="home-bubble" hidden>${bubble()}</div>
-    <button class="ask-fab" id="ask-fab" aria-label="슬라임의 물음" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 9.5a3 3 0 1 1 4.6 2.5c-1 .7-1.6 1.3-1.6 2.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><circle cx="12" cy="18" r="1.4" fill="currentColor"/></svg><i class="ask-dot" hidden></i></button>
+    <div class="home-bubble" id="home-bubble" ${state.profile.catName ? 'hidden' : ''}>${nameBubble()}</div>
+    ${feedHtml()}
   </section>`;
-  syncAsk();
-  try { slime = mountSlime($('#slime-stage'), { onPoke: maybeSay, onBead: id => showSay(beadText(id)), onDoubleTap: () => journalEditor(), reduced: matchMedia('(prefers-reduced-motion: reduce)').matches }); syncBeads(); syncNight(); }
+  wireFeed();
+  try { slime = mountSlime($('#slime-stage'), { onPoke: maybeSay, onBead: id => showSay(beadText(id)), onDoubleTap: () => $('#feed-input')?.focus(), reduced: matchMedia('(prefers-reduced-motion: reduce)').matches }); syncBeads(); syncNight(); }
   catch (e) { $('#slime-stage').innerHTML = `<p class="empty">이 브라우저에서는 슬라임을 그릴 수 없습니다.<br><small>${esc(e.message)}</small></p>`; }
 }
 function renderShelf() {
@@ -303,7 +305,7 @@ function shelfResults() {
 const talkOf = (kind, ref) => [...state.chats].reverse().find(c => c.topic.kind === kind && c.topic.ref === ref);
 function talkButton(kind, ref, bookId = '', cls = '') {
   const n = talkOf(kind, ref)?.messages.length || 0;
-  return `<button class="${n ? 'talked' : ''} ${cls}" data-action="talk-${kind}" data-id="${esc(ref)}"${bookId ? ` data-book="${esc(bookId)}"` : ''}>${n ? `이야기 이어가기 · ${n}마디` : '이야기하기'}</button>`;
+  return `<button class="talk-btn ${n ? 'talked' : ''} ${cls}" data-action="talk-${kind}" data-id="${esc(ref)}"${bookId ? ` data-book="${esc(bookId)}"` : ''}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5C4 5.1 5.1 4 6.5 4h11C18.9 4 20 5.1 20 6.5v7c0 1.4-1.1 2.5-2.5 2.5H11l-4.5 3.8V16C5.1 16 4 14.9 4 13.5z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/></svg>${n ? `이어가기 · ${n}마디` : '이야기하기'}</button>`;
 }
 // 이야기 끝에 기록 아래 덧붙인 말
 const moreHtml = list => (list || []).length ? `<div class="more">${list.map(m => `<p>${esc(m.text)}<small>${esc(dateLabel(m.createdAt))}${m.chat ? ' · 이야기에서' : ''}</small><button class="more-del" data-action="delete-more" data-id="${esc(m.id)}" aria-label="덧붙인 말 지우기">×</button></p>`).join('')}</div>` : '';
@@ -542,7 +544,7 @@ function pcMode() {
 function setPcMode(on) { try { localStorage.setItem('pc-mode', on ? '1' : '0'); localStorage.removeItem('enter-sends'); } catch {} }
 // PC 모드면 Enter로 보냄. 아니면 넓은 화면·마우스일 때만
 const enterSendsPref = () => pcMode() || matchMedia('(min-width: 760px), (pointer: fine)').matches;
-let ctxOpen = false;
+let ctxOpen = false, talkFocus = false;   // talkFocus: 이야기하기를 눌러 들어오면 입력칸에 바로
 // 이야기 탭 — 슬라임과 주고받은 것: 내가 꺼낸 이야기(책 갈래 · 생각 갈래)와 슬라임이 물어 내가 한 답
 const LANE = { book: 'book', entry: 'book', question: 'book', thought: 'thought', free: 'thought', answer: 'ask' };
 const lastAt = c => Date.parse(c.messages.at(-1)?.at || c.createdAt) || 0;
@@ -558,8 +560,9 @@ function renderTalks() {
   ].sort((x, y) => y.at - x.at);
   const count = k => items.filter(x => k === 'all' || x.lane === k).length;
   const shown = items.filter(x => talkFilter === 'all' || x.lane === talkFilter);
-  const lanes = [['all', '전체'], ['book', '책'], ['thought', '생각'], ['ask', `${name}의 물음`]];
-  const none = { all: ['아직 주고받은 게 없어요', '책·문장·질문·생각에서 "이야기하기"를 누르거나, 첫 화면 물음표로 슬라임의 물음에 답해 보세요.'], book: ['책 이야기가 아직 없어요', '책장에서 문장이나 질문을 열고 "이야기하기"를 눌러 보세요.'], thought: ['생각 이야기가 아직 없어요', '생각 탭에서 "이야기하기"를 누르거나, 새 이야기로 시작해 보세요.'], ask: ['아직 답한 물음이 없어요', '첫 화면의 물음표를 누르면 오늘의 물음이 있습니다.'] }[talkFilter];
+  const lanes = [['all', '전체'], ['book', '책'], ['thought', '생각'], ...(state.answers.length ? [['ask', `${name}의 물음`]] : [])];
+  if (talkFilter === 'ask' && !state.answers.length) talkFilter = 'all';
+  const none = { all: ['아직 주고받은 게 없어요', '책·문장·질문·생각에서 "이야기하기"를 누르거나, ＋ 새 이야기로 시작해 보세요.'], book: ['책 이야기가 아직 없어요', '책장에서 문장이나 질문을 열고 "이야기하기"를 눌러 보세요.'], thought: ['생각 이야기가 아직 없어요', '생각 탭에서 "이야기하기"를 누르거나, 새 이야기로 시작해 보세요.'], ask: ['아직 답한 물음이 없어요', '첫 화면의 물음표를 누르면 오늘의 물음이 있습니다.'] }[talkFilter];
   $('#main').innerHTML = `<div class="narrow"><div class="intro"><div><h1>이야기</h1><p>${esc(name)}과 주고받은 것 — 내가 꺼낸 이야기와, ${esc(name)}이 물어 내가 한 답.</p></div><button class="primary intro-actions" data-action="talk-free">＋ 새 이야기</button></div><div class="toolbar"><div class="filters" aria-label="이야기 갈래">${lanes.map(([v, l]) => `<button data-talk-filter="${v}" aria-pressed="${talkFilter === v}">${esc(l)} <small>${count(v)}</small></button>`).join('')}</div></div><div class="talk-list">${shown.length ? shown.map(x => x.html()).join('') : empty(...none)}</div></div>`;
   focusRecord();
 }
@@ -614,7 +617,8 @@ const keepLabel = c => ({ answer: '답으로 남기기', memo: '남기기', ques
 function renderTalk(id) {
   const c = state.chats.find(x => x.id === id), name = state.profile.catName || '슬라임';
   if (!c) { $('#main').innerHTML = empty('이야기를 찾을 수 없어요', '목록에서 다시 골라 주세요.', '<a class="back" href="#talk">← 이야기</a>'); return; }
-  const draft = $('#talk-input')?.value || '', home = talkHome(c);
+  const old = $('#talk-input'), draft = old?.value || '', home = talkHome(c);
+  const keep = old && document.activeElement === old ? [old.selectionStart, old.selectionEnd] : null;
   const face = miniSlime(slimeLook().color);
   const bubbleHtml = (role, text) => role === 'assistant' ? `<div class="talk-msg slime">${face}<p>${esc(text)}</p></div>` : `<div class="talk-msg me"><p>${esc(text)}</p></div>`;
   const pending = talkPending === id, on = !!state.profile.aiConsentAt, pc = pcMode(), wide = pc || matchMedia('(min-width: 760px)').matches, enterSends = enterSendsPref();
@@ -644,7 +648,9 @@ function renderTalk(id) {
     // PC: Enter로 보내고 Shift+Enter로 줄바꿈. 폰: 보내기 단추 (Ctrl+Enter도 됨)
     input.onkeydown = e => { if (e.key === 'Escape' && ctxOpen) { ctxOpen = false; renderTalk(id); return; } if (e.key === 'Enter' && !e.isComposing && ((enterSends && !e.shiftKey) || e.ctrlKey || e.metaKey)) { e.preventDefault(); $('#talk-form').requestSubmit(); } };
     $('#talk-form').onsubmit = e => { e.preventDefault(); const t = input.value.trim(); if (t) sendTalk(id, t); };
-    if (wide && !pending) input.focus({ preventScroll: true });
+    if (keep) { input.focus({ preventScroll: true }); input.setSelectionRange(...keep); }
+    else if ((wide || talkFocus) && !pending) input.focus({ preventScroll: true });
+    talkFocus = false;
   }
 }
 async function sendTalk(id, text) {
@@ -722,16 +728,16 @@ function usageBlock() {
 function renderMe() {
   const p = state.profile, name = p.catName || '나만의 슬라임', s = stats(state), look = slimeLook();
   const first = beadList().find(b => b.at), days = first ? Math.max(1, Math.round((Date.now() - first.at) / 864e5)) : 0;
-  const ins = state.insights?.date === todayKey() && (state.insights.lines.length || state.insights.question) ? state.insights : null;
+  const ins = state.insights?.date === todayKey() && state.insights.lines.length ? state.insights : null;
   $('#main').innerHTML = `<div class="narrow me">
     <section class="me-card me-slime">
       <div class="me-avatar">${miniSlime(look.color)}</div>
       <div class="me-who"><h1>${esc(name)}</h1><p>${days ? `<span>함께한 지 ${days}일</span> · ` : ''}<span>방울 ${beadList().length}개</span>${look.tag ? ` · <span>요즘 #${esc(look.tag)}</span>` : ''}</p></div>
       <button data-action="profile">바꾸기</button>
     </section>
-    ${ins ? `<section class="me-card me-today"><h2>오늘 ${esc(name)}의 말</h2>${ins.lines.map(l => `<p class="me-line">${esc(l.text)}</p>`).join('')}${ins.question ? `<p class="me-q"><span>오늘의 물음</span>${esc(ins.question)}</p>` : ''}</section>` : ''}
+    ${ins ? `<section class="me-card me-today"><h2>오늘 ${esc(name)}의 말</h2>${ins.lines.map(l => `<p class="me-line">${esc(l.text)}</p>`).join('')}</section>` : ''}
     <section class="me-card"><h2>슬라임이 기록 읽기</h2>
-      <p class="hint">켜면 내가 쓴 <b>생각, 슬라임의 물음에 한 답, 책 문장에 단 메모와 덧붙인 말</b>을 AI(Anthropic Claude)에게 보내 주제어를 붙이고, 하루 한 번 '그땐 / 지금은' 말과 오늘의 물음을 만듭니다. 책에서 옮겨 적은 문장은 보내지 않습니다. 중계소는 글을 저장하지 않고, 결과는 이 기기에만 남습니다.</p>
+      <p class="hint">켜면 내가 쓴 <b>생각, 슬라임의 물음에 한 답, 책 문장에 단 메모와 덧붙인 말</b>을 AI(Anthropic Claude)에게 보내 주제어를 붙이고, 하루 한 번 '그땐 / 지금은' 말을 만듭니다. 책에서 옮겨 적은 문장은 보내지 않습니다. 중계소는 글을 저장하지 않고, 결과는 이 기기에만 남습니다.</p>
       <div class="me-toggle"><button id="ai-toggle" class="${p.aiConsentAt ? '' : 'primary'}">${p.aiConsentAt ? '끄기' : '켜기'}</button><p class="hint" id="ai-status">${aiStatus()}</p></div>
     </section>
     <section class="me-card"><h2>PC 모드</h2><p class="hint">폰을 노트북에 연결해 이야기할 때 켜 두세요. 이야기 화면이 아래 탭 없이 화면 높이를 다 쓰고, 글씨가 조금 커지고, <b>Enter로 보내고 Shift+Enter로 줄을 바꿉니다.</b> 이야기 화면 오른쪽 위 <b>PC</b> 단추로도 켜고 끌 수 있습니다. 이 기기에만 적용됩니다.</p><div class="me-toggle"><button id="pc-toggle" class="${pcMode() ? '' : 'primary'}">${pcMode() ? 'PC 모드 끄기' : 'PC 모드 켜기'}</button></div></section>
@@ -805,12 +811,12 @@ document.addEventListener('click', e => {
     case 'edit-journal': journalEditor(id); break;
     case 'clear-query': query = ''; renderBook(); break;
     case 'profile': profileEditor(); break;
-    case 'talk-free': startTalk('free'); break;
-    case 'talk-book': { const b = currentBook(); if (b) startTalk('book', b.id); break; }
-    case 'talk-thought': startTalk('thought', id); break;
-    case 'talk-answer': startTalk('answer', id); break;
-    case 'talk-entry': startTalk('entry', id, book); break;
-    case 'talk-question': startTalk('question', id, book); break;
+    case 'talk-free': talkFocus = true; startTalk('free'); break;
+    case 'talk-book': { const b = currentBook(); if (b) { talkFocus = true; startTalk('book', b.id); } break; }
+    case 'talk-thought': talkFocus = true; startTalk('thought', id); break;
+    case 'talk-answer': talkFocus = true; startTalk('answer', id); break;
+    case 'talk-entry': talkFocus = true; startTalk('entry', id, book); break;
+    case 'talk-question': talkFocus = true; startTalk('question', id, book); break;
     case 'talk-quote': { if (ctxOpen) { ctxOpen = false; document.body.classList.remove('ctx-open'); $('[data-action=talk-ctx]')?.setAttribute('aria-pressed', 'false'); } const el = $('#talk-input'); if (el) { el.value = (el.value ? el.value.replace(/\s*$/, '\n') : '') + `“${btn.dataset.text}” `; el.dispatchEvent(new Event('input')); el.focus(); } break; }
     case 'talk-keep': talkKeep(route().id); break;
     case 'delete-more': deleteMore(id); break;
@@ -819,16 +825,12 @@ document.addEventListener('click', e => {
     case 'pc-mode': { setPcMode(!pcMode()); ctxOpen = false; render(); notice(pcMode() ? 'PC 모드: 화면을 넓게 쓰고 Enter로 보냅니다.' : 'PC 모드를 껐습니다.'); break; }
     case 'talk-retry': { const c = state.chats.find(x => x.id === route().id); if (c?.messages.at(-1)?.role === 'user') sendTalk(c.id, ''); break; }
     case 'usage-reset': change(s => { s.usage = emptyUsage(); }, 'AI 사용량을 0부터 다시 셉니다.'); break;
-    case 'cat-answer': answerEditor(btn.dataset.prompt); break;
     case 'edit-answer': answerEditor('', id); break;
-    case 'cat-book': recordEditor('entries', book); break;
-    case 'cat-skip': skip(btn.dataset.slot); break;
   }
-  if (btn.id === 'ask-fab') { askOpen = !askOpen; syncAsk(); }
 });
 window.addEventListener('hashchange',() => { if (dialog.open) closeModal(); render(); window.scrollTo(0,0); });
 let resizeTimer = 0;
-window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { if (route().page === 'talk' && route().id && !dialog.open) { const d = $('#talk-input')?.value; render(); if (d && $('#talk-input')) { $('#talk-input').value = d; $('#talk-input').dispatchEvent(new Event('input')); } } }, 250); });
+window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { if (route().page === 'talk' && route().id && !dialog.open && !!$('.talk-desk.desk') !== (pcMode() || matchMedia('(min-width: 760px)').matches)) { const d = $('#talk-input')?.value; render(); if (d && $('#talk-input')) { $('#talk-input').value = d; $('#talk-input').dispatchEvent(new Event('input')); } } }, 250); });
 window.addEventListener('beforeunload',e => { if (busy) { e.preventDefault(); e.returnValue = ''; } });
 channel && (channel.onmessage = async e => {
   if (e.data <= revision) return;
