@@ -40,6 +40,13 @@ export function normalize(input) {
   }
   // 이야기 끝에 기록 아래 덧붙인 말 (문장·생각)
   const more = v => list(v, '덧붙인 말', true).slice(-500).map(m => { row(m); return { id: id(m.id), text: text(m.text, '덧붙인 말'), createdAt: text(m.createdAt, '날짜', 100, true), chat: text(m.chat, '이야기', 100, true) }; });
+  // 책 정리 — AI가 내 말로 만든 정리. 형식이 어긋나면 버립니다(다시 정리하면 됨)
+  const summaryOf = v => {
+    if (!object(v)) return null;
+    const str = (x, n) => typeof x === 'string' ? x.slice(0, n) : '', arr = (x, f) => Array.isArray(x) ? x.slice(0, 8).map(f).filter(Boolean) : [];
+    const pin = h => object(h) && typeof h.id === 'string' ? { id: h.id.slice(0, 100), why: str(h.why, 200) } : null;
+    return { at: str(v.at, 40), n: Number.isFinite(v.n) && v.n >= 0 ? Math.round(v.n) : 0, line: str(v.line, 200), held: arr(v.held, pin), open: arr(v.open, pin), changed: arr(v.changed, c => object(c) && typeof c.then === 'string' && typeof c.now === 'string' ? { then: c.then.slice(0, 200), now: c.now.slice(0, 200) } : null) };
+  };
   const books = list(p.books, '책', !modern).map(b => {
     row(b);
     const entries = modern ? list(b.entries, '문장') : (b.e != null ? list(b.e, '문장') : b.l ? [{ l: b.l, d: b.d || '' }] : []);
@@ -51,7 +58,7 @@ export function normalize(input) {
       id: id(b.id), title, author: text(b.author, '저자', 1000, true), publisher: text(b.publisher, '출판사', 500, true),
       isbn: text(b.isbn, 'ISBN', 100, true), cover: modern ? safeCover(b.cover) : '',
       color: ['forest', 'clay', 'blue', 'sand'].includes(b.color) ? b.color : 'forest', status,
-      createdAt: text(modern ? b.createdAt : b.s || b.d, '날짜', 100, true), finishedAt: text(b.finishedAt, '완독일', 100, true),
+      createdAt: text(modern ? b.createdAt : b.s || b.d, '날짜', 100, true), finishedAt: text(b.finishedAt, '완독일', 100, true), summary: summaryOf(b.summary),
       entries: entries.map(e => { row(e); return { id: id(e.id), text: text(modern ? e.text : e.l, '문장'), page: text(e.page, '페이지', 50, true), note: text(e.note, '메모', 100000, true), more: more(e.more), createdAt: text(modern ? e.createdAt : e.d, '날짜', 100, true) }; }),
       questions: list(b.questions, '질문', !modern).map(q => { row(q); return { id: id(q.id), text: text(q.text, '질문'), answer: text(q.answer, '답변', 100000, true), createdAt: text(q.createdAt, '날짜', 100, true), answeredAt: text(q.answeredAt, '답변일', 100, true), from: text(q.from, '문장', 100, true), history: list(q.history, '예전 답', true).slice(-100).map(h => { row(h); return { text: text(h.text, '예전 답'), at: text(h.at, '날짜', 100, true) }; }) }; })
     };

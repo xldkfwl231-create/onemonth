@@ -2,9 +2,9 @@ import { uid, now, emptyState, normalize, backup, stats, matchesBook, dateLabel,
 import { mountSlime } from './slime.js';
 import { mountBoard, BOARD_COLORS } from './board.js';
 import { openStore, load, commit, previous } from './storage.js';
-import { BOOK_SEARCH_ENDPOINT, AI_ENDPOINT, AI_REFLECT_ENDPOINT, AI_CHAT_ENDPOINT } from './config.js';
+import { BOOK_SEARCH_ENDPOINT, AI_ENDPOINT, AI_SUMMARY_ENDPOINT, AI_CHAT_ENDPOINT } from './config.js';
 
-const BUILD = '1012m';   // 폰에서 어떤 판을 보고 있는지 확인용
+const BUILD = '1012n';   // 폰에서 어떤 판을 보고 있는지 확인용
 const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 // 이름 뒤 조사 — 받침이 있으면 이/과, 없으면 가/와 (뚱이가, 말랑이)
@@ -121,9 +121,6 @@ function sayLines() {
 }
 function maybeSay(pokes) {
   const el = $('#slime-say'); if (!el) return;
-  // 오늘 슬라임이 만든 말이 남아 있으면 그걸 먼저 — 만지기 시작하면 바로
-  const fresh = state.insights?.date === todayKey() ? state.insights.lines.map(l => l.text).filter(t => !saidToday.has(t)) : [];
-  if (fresh.length && (pokes === 1 || Math.random() < 0.6)) { saidToday.add(fresh[0]); showSay(fresh[0]); return; }
   if (pokes < 2 || Math.random() > 0.35) return;
   let dayCount = 0; try { dayCount = Number(localStorage.getItem(`slime-said:${todayKey()}`) || 0); } catch {}
   if (dayCount >= 3) return;
@@ -134,7 +131,7 @@ function maybeSay(pokes) {
 }
 // 슬라임이 먹은 기록 — 생각, 책 문장, 슬라임에게 한 답. 오래된 것부터.
 // ── AI 사용량 ── 요청마다 아래에 잠깐 보여 주고, '나'에 모아 둡니다. 값은 Claude Haiku 5.5 기준 대략치.
-const USAGE_LABEL = { tags: '주제어 붙이기', reflect: '오늘의 말', chat: '이야기' };
+const USAGE_LABEL = { tags: '주제어 붙이기', chat: '이야기', summary: '책 정리', reflect: '오늘의 말(예전)' };
 const PRICE = { input: 0.10 / 1e6, output: 0.50 / 1e6 };
 const dollars = u => (u.input * PRICE.input + u.output * PRICE.output);
 const WON_PER_USD = 1400;   // 대략 환율 — 정확한 값이 필요하면 여기만 고치면 됩니다
@@ -175,7 +172,7 @@ let reading = false, readBackoff = 0;
 async function readRecords() {
   if (reading || !ready || busy || !state.profile.aiConsentAt || !AI_ENDPOINT || !navigator.onLine || Date.now() < readBackoff) return;
   const todo = aiSources().filter(x => state.readings[x.id]?.h !== x.h).slice(0, 25);
-  if (!todo.length) return reflectToday();
+  if (!todo.length) return;
   reading = true;
   try {
     const res = await fetch(AI_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items: todo.map(({ id, text }) => ({ id, text })), known: tagCounts().slice(0, 80).map(x => x[0]) }), signal: AbortSignal.timeout(30000) });
@@ -194,32 +191,6 @@ async function readRecords() {
     if (tag && route().page === 'home') { lastFed = ''; setTimeout(() => showSay(`음… #${tag} 맛이 나.`), 1200); }
   } catch { readBackoff = Date.now() + 5 * 60e3; }
   finally { reading = false; }
-}
-// 하루 한 번: 슬라임이 기록을 읽고 '그땐/지금은' 몇 줄과 오늘의 질문을 만들어 둡니다
-let reflecting = false, reflectBackoff = 0;
-async function reflectToday() {
-  const date = todayKey();
-  if (reflecting || !ready || busy || !state.profile.aiConsentAt || !AI_REFLECT_ENDPOINT || !navigator.onLine || Date.now() < reflectBackoff || (state.insights?.date === date && (state.insights.lines.length || state.insights.question))) return;
-  const kindOf = { thought: '생각', answer: '답', entry: '책 메모' }, src = new Map(aiSources().map(x => [x.id, x]));
-  const all = beadList().filter(b => src.has(b.id)).reverse();   // 최근 것부터
-  if (all.length < 3) return;
-  const cut = Date.now() - 21 * 864e5, recent = all.filter(b => b.at >= cut).slice(0, 35), older = all.filter(b => b.at < cut).slice(0, 60 - Math.min(35, recent.length));
-  const pick = [...recent, ...older].slice(0, 60).reverse();   // 오래된 것부터 읽게
-  if (pick.length < 3) return;
-  reflecting = true;
-  try {
-    const res = await fetch(AI_REFLECT_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(45000), body: JSON.stringify({
-      name: state.profile.catName || '슬라임', tone: state.profile.tone, today: date,
-      items: pick.map(b => ({ id: b.id, date: b.at ? new Date(b.at).toISOString().slice(0, 10) : '', kind: kindOf[b.kind], text: src.get(b.id).text.slice(0, 400), tags: state.readings[b.id]?.tags || [] }))
-    }) });
-    if (!res.ok) throw new Error(String(res.status));
-    const out = await res.json();
-    if (!Array.isArray(out?.lines) || typeof out.question !== 'string' || (!out.lines.length && !out.question)) throw new Error('bad reply');
-    reflecting = false;
-    await change(s => { s.insights = { date, at: now(), question: out.question || '', lines: (out.lines || []).map(l => ({ text: l.text, ids: l.ids || [] })) }; addUsage(s, 'reflect', out.usage); }, '');
-    flashUsage('reflect', out.usage);
-  } catch { reflectBackoff = Date.now() + 15 * 60e3; }
-  finally { reflecting = false; }
 }
 // 요즘(60일) 가장 많은 주제가 슬라임 겉색에 스밉니다
 function slimeLook() {
@@ -382,12 +353,50 @@ function timeline(items, render) {
   return html + '</div>';
 }
 const dayShort = v => isIso(v) ? new Date(v).toLocaleDateString('ko-KR', { day: 'numeric', weekday: 'short' }) : dateLabel(v);
+// ── 책 정리 ── 붙든 문장 · 아직 답 못 한 질문 · 그사이 바뀐 생각. 내 말(메모 · 덧붙임 · 질문 · 답 · 이야기)만 보냅니다.
+let summaryPending = '';
+const myLines = ref => state.chats.filter(c => c.topic.ref === ref).flatMap(c => c.messages.filter(m => m.role === 'user').map(m => m.text));
+const bookWords = b => b.entries.reduce((n, e) => n + (e.note ? 1 : 0) + (e.more || []).length + myLines(e.id).length, 0) + b.questions.reduce((n, q) => n + 1 + (q.answer ? 1 : 0) + (q.history || []).length + myLines(q.id).length, 0) + myLines(b.id).length;
+async function summarizeBook(bookId) {
+  const b = state.books.find(x => x.id === bookId); if (!b || summaryPending) return;
+  if (!state.profile.aiConsentAt) { notice("책 정리는 '나 → 슬라임이 기록 읽기'를 켜야 할 수 있어요."); return; }
+  if (!bookWords(b)) { notice('정리할 내 말이 아직 없어요. 문장에 메모를 달거나 질문을 남겨 보세요.'); return; }
+  summaryPending = bookId; renderBook();
+  try {
+    const res = await fetch(AI_SUMMARY_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(60000), body: JSON.stringify({
+      name: state.profile.catName || '슬라임', tone: state.profile.tone, book: { title: b.title, author: b.author },
+      entries: b.entries.slice(-80).map(e => ({ id: e.id, page: e.page, note: e.note, more: (e.more || []).map(m => m.text), talk: myLines(e.id).slice(-10) })),
+      questions: b.questions.slice(-60).map(q => ({ id: q.id, text: q.text, answer: q.answer, history: (q.history || []).map(h => h.text), talk: myLines(q.id).slice(-10) })),
+      talk: myLines(b.id).slice(-10)
+    }) });
+    const out = await res.json().catch(() => ({}));
+    if (res.status === 404 || res.status === 405) throw new Error('중계소가 아직 예전 코드예요. worker 코드를 새로 붙여 넣어 주세요.');
+    if (!res.ok || typeof out.line !== 'string' || !Array.isArray(out.held)) throw new Error(out.error || `연결 실패 (${res.status})`);
+    summaryPending = '';
+    await change(s => { const x = s.books.find(y => y.id === bookId); if (x) x.summary = { at: now(), n: bookWords(b), line: out.line, held: out.held, open: out.open || [], changed: out.changed || [] }; addUsage(s, 'summary', out.usage); }, '책을 정리했습니다.');
+    flashUsage('summary', out.usage);
+  } catch (e) { notice(`정리하지 못했어요. ${e.name === 'TimeoutError' ? '시간이 너무 오래 걸렸습니다.' : e.message}`); }
+  finally { summaryPending = ''; if (route().page === 'book' && route().id === bookId) renderBook(); }
+}
+function summaryHtml(b) {
+  if (summaryPending === b.id) return `<section class="book-sum pending"><h2>이 책 정리</h2><p class="hint">${esc(ig(state.profile.catName || '슬라임'))} 내 말을 모아 정리하는 중… <span class="dots"><i></i><i></i><i></i></span></p></section>`;
+  const s = b.summary; if (!s) return '';
+  const fresh = Math.max(0, bookWords(b) - s.n);
+  const held = s.held.map(h => ({ h, e: b.entries.find(e => e.id === h.id) })).filter(x => x.e), open = s.open.map(o => ({ o, q: b.questions.find(q => q.id === o.id) })).filter(x => x.q);
+  return `<details class="book-sum" open><summary><h2>이 책 정리</h2><small>${esc(dateLabel(s.at))}${fresh ? ` · 그 뒤로 남긴 말 ${fresh}개` : ''}</small></summary>
+    ${s.line ? `<p class="sum-line">${esc(s.line)}</p>` : ''}
+    ${held.length ? `<h3>붙든 문장</h3>${held.map(({ h, e }) => `<button class="sum-item" data-action="sum-go" data-tab="entries" data-id="${esc(e.id)}"><span class="q-text">“${esc(e.text)}”</span>${e.page ? `<small>p. ${esc(e.page)}</small>` : ''}${h.why ? `<span class="why">${esc(h.why)}</span>` : ''}</button>`).join('')}` : ''}
+    ${open.length ? `<h3>아직 답 못 한 질문</h3>${open.map(({ o, q }) => `<button class="sum-item q" data-action="sum-go" data-tab="questions" data-id="${esc(q.id)}"><span class="q-text">? ${esc(q.text)}</span>${o.why ? `<span class="why">${esc(o.why)}</span>` : ''}</button>`).join('')}` : ''}
+    ${s.changed.length ? `<h3>그사이 바뀐 생각</h3>${s.changed.map(c => `<div class="sum-change"><p><span>그땐</span>${esc(c.then)}</p><p><span>지금은</span>${esc(c.now)}</p></div>`).join('')}` : ''}
+    <div class="sum-foot"><button class="quiet" data-action="summarize">${fresh ? '새로 남긴 말까지 다시 정리' : '다시 정리'}</button></div>
+  </details>`;
+}
 function renderBook() {
   const b = currentBook();
   if (!b) { $('#main').innerHTML = empty('책을 찾을 수 없어요', '책장에서 다른 책을 골라주세요.', '<a class="back" href="#shelf">← 책장으로</a>'); return; }
   const activeQuery = query.trim();
   const records = b[entryTab].filter(e => !activeQuery || [e.text,e.note || '',e.answer || '',e.page || ''].some(t => t.toLowerCase().includes(activeQuery.toLowerCase())));
-  $('#main').innerHTML = `<div class="narrow"><a class="back" href="#shelf">← 책장으로</a><section class="book-hero" aria-labelledby="book-title">${cover(b)}<span class="status-tag">${b.status === 'finished' ? '다 읽음' : '읽는 중'}</span><h1 id="book-title">${esc(b.title)}</h1><p class="book-sub">${esc([b.author,b.publisher].filter(Boolean).join(' · ') || '나만의 독서 기록')}</p><p class="book-sub small">${esc(dateLabel(b.createdAt))}부터${b.finishedAt ? ` · ${esc(dateLabel(b.finishedAt))} 완독` : ''}</p><div class="actions">${talkButton('book', b.id, '', 'primary')}</div><div class="actions small-actions"><button class="quiet" data-action="edit-book">책 정보 수정</button><button class="quiet" data-action="toggle-status">${b.status === 'finished' ? '다시 읽기' : '다 읽었어요'}</button></div></section><div class="book-tabs"><div class="seg" role="group" aria-label="문장과 질문"><button class="entries" data-entry-tab="entries" aria-pressed="${entryTab === 'entries'}"><span aria-hidden="true">“</span> 문장 <small>${b.entries.length}</small></button><button class="questions" data-entry-tab="questions" aria-pressed="${entryTab === 'questions'}"><span aria-hidden="true">?</span> 질문 <small>${b.questions.length}${b.questions.filter(q => q.answer).length ? ` · 답 ${b.questions.filter(q => q.answer).length}` : ''}</small></button></div><button class="primary" data-action="add-record">＋ ${entryTab === 'entries' ? '문장' : '질문'}</button></div>${activeQuery ? `<p class="search-count">“${esc(query)}” 검색 중 <button class="quiet" data-action="clear-query">검색 해제</button></p>` : ''}<div class="quotes">${records.length ? [...records].reverse().map(e => quoteCard(e,b,entryTab)).join('') : empty(activeQuery ? '일치하는 기록이 없어요' : entryTab === 'entries' ? '오래 두고 싶은 문장' : '서둘러 답하지 않아도 괜찮아요', activeQuery ? '검색을 해제하면 모든 기록이 보입니다.' : entryTab === 'entries' ? '읽다가 걸린 문장과 그때의 생각을 남겨보세요.' : '읽다가 생긴 물음을 적어두고, 나중의 나에게 건네보세요.')}</div><p class="section-note"><button class="quiet danger" data-action="delete-book">이 책 삭제</button></p></div>`;
+  $('#main').innerHTML = `<div class="narrow"><a class="back" href="#shelf">← 책장으로</a><section class="book-hero" aria-labelledby="book-title">${cover(b)}<span class="status-tag">${b.status === 'finished' ? '다 읽음' : '읽는 중'}</span><h1 id="book-title">${esc(b.title)}</h1><p class="book-sub">${esc([b.author,b.publisher].filter(Boolean).join(' · ') || '나만의 독서 기록')}</p><p class="book-sub small">${esc(dateLabel(b.createdAt))}부터${b.finishedAt ? ` · ${esc(dateLabel(b.finishedAt))} 완독` : ''}</p><div class="actions">${talkButton('book', b.id, '', 'primary')}${b.summary || summaryPending === b.id ? '' : '<button class="sum-btn" data-action="summarize">이 책 정리</button>'}</div><div class="actions small-actions"><button class="quiet" data-action="edit-book">책 정보 수정</button><button class="quiet" data-action="toggle-status">${b.status === 'finished' ? '다시 읽기' : '다 읽었어요'}</button></div></section>${summaryHtml(b)}<div class="book-tabs"><div class="seg" role="group" aria-label="문장과 질문"><button class="entries" data-entry-tab="entries" aria-pressed="${entryTab === 'entries'}"><span aria-hidden="true">“</span> 문장 <small>${b.entries.length}</small></button><button class="questions" data-entry-tab="questions" aria-pressed="${entryTab === 'questions'}"><span aria-hidden="true">?</span> 질문 <small>${b.questions.length}${b.questions.filter(q => q.answer).length ? ` · 답 ${b.questions.filter(q => q.answer).length}` : ''}</small></button></div><button class="primary" data-action="add-record">＋ ${entryTab === 'entries' ? '문장' : '질문'}</button></div>${activeQuery ? `<p class="search-count">“${esc(query)}” 검색 중 <button class="quiet" data-action="clear-query">검색 해제</button></p>` : ''}<div class="quotes">${records.length ? [...records].reverse().map(e => quoteCard(e,b,entryTab)).join('') : empty(activeQuery ? '일치하는 기록이 없어요' : entryTab === 'entries' ? '오래 두고 싶은 문장' : '서둘러 답하지 않아도 괜찮아요', activeQuery ? '검색을 해제하면 모든 기록이 보입니다.' : entryTab === 'entries' ? '읽다가 걸린 문장과 그때의 생각을 남겨보세요.' : '읽다가 생긴 물음을 적어두고, 나중의 나에게 건네보세요.')}</div><p class="section-note"><button class="quiet danger" data-action="delete-book">이 책 삭제</button></p></div>`;
   focusRecord();
 }
 function renderQuestions() {
@@ -527,8 +536,7 @@ function backupNudgeHtml() {
 function syncBackupNudge() { const el = $('#backup-nudge'); if (el) el.innerHTML = backupNudgeHtml(); }
 function aiStatus() {
   const all = aiSources(), done = all.filter(x => state.readings[x.id]?.h === x.h).length;
-  const today = state.insights?.date === todayKey() ? ` 오늘의 말 ${state.insights.lines.length}줄을 만들어 뒀습니다.` : '';
-  return state.profile.aiConsentAt ? `${all.length}개 중 ${done}개를 읽었습니다.${today}${readBackoff > Date.now() || reflectBackoff > Date.now() ? ' 지금은 연결이 안 돼서 잠시 뒤 다시 시도합니다.' : ''}` : '꺼져 있습니다. 켜기 전까지는 아무것도 보내지 않습니다.';
+  return state.profile.aiConsentAt ? `${all.length}개 중 ${done}개를 읽었습니다.${readBackoff > Date.now() ? ' 지금은 연결이 안 돼서 잠시 뒤 다시 시도합니다.' : ''}` : '꺼져 있습니다. 켜기 전까지는 아무것도 보내지 않습니다.';
 }
 // ── 슬라임과 이야기 (토론) ───────────────────────────────────
 let talkPending = '', talkError = '';
@@ -717,6 +725,34 @@ function renderTalk(id) {
   if (kb) { kb.oninput = () => { keepDrafts[id] = kb.value; }; $$('[name=keep-where]').forEach(r => { r.onchange = () => { keepPick[id] = r.value; }; }); }
   if (keep && $('#' + keep[0])) { const el = $('#' + keep[0]); el.focus({ preventScroll: true }); el.setSelectionRange(keep[1], keep[2]); }
 }
+// ── 슬라임의 기억 ── 이 앱에 남긴 모든 것(책에서 옮겨 적은 문장은 빼고) 가운데, 지금 이야기와 주제어가 겹치는 것을 먼저,
+// 그다음 최근 것을 골라 오래된 순으로 보냅니다. 자주 나온 주제어도 한 줄로.
+function memoryFor(c) {
+  const { book } = talkSubject(c), skip = new Set([c.topic.ref]);
+  const topicTags = new Set([...(state.readings[c.topic.ref]?.tags || []), ...(c.topic.kind === 'book' && book ? book.entries.flatMap(e => state.readings[e.id]?.tags || []) : [])]);
+  const items = [], add = (id, kind, text, at) => {
+    if (!text || !text.trim() || skip.has(id)) return;
+    const score = (state.readings[id]?.tags || []).filter(t => topicTags.has(t)).length;
+    items.push({ kind, text: text.slice(0, 380), at: isIso(at) ? Date.parse(at) : 0, score });
+  };
+  const words = list => (list || []).map(m => m.text);
+  for (const t of state.thoughts) add(t.id, '생각', [t.text, ...words(t.more)].join(' / 덧붙임: '), t.createdAt);
+  for (const a of state.answers) add(a.id, '슬라임의 물음에 한 답', `${a.prompt} → ${[a.text, ...words(a.more)].join(' / ')}`, a.createdAt);
+  for (const b of state.books) {
+    for (const e of b.entries) add(e.id, `『${cutN(b.title, 24)}』 문장에 단 메모`, [e.note, ...words(e.more)].filter(Boolean).join(' / '), e.createdAt);
+    for (const q of b.questions) add(q.id, `『${cutN(b.title, 24)}』 질문`, `${q.text}${q.answer ? ` → 지금의 답: ${q.answer}` : ' (아직 답 없음)'}${(q.history || []).length ? ` (그땐: ${q.history.at(-1).text})` : ''}`, q.createdAt);
+  }
+  for (const x of state.chats) {
+    if (x.id === c.id) continue;
+    const mine = x.messages.filter(m => m.role === 'user'); if (!mine.length) continue;
+    add('chat:' + x.id, `이야기 — ${talkKind[x.topic.kind]}${x.topic.kind === 'free' ? '' : ` “${cutN(talkFull(x), 30)}”`}에서 내가 한 말`, mine.slice(-4).map(m => m.text).join(' / '), mine.at(-1).at);
+  }
+  const related = items.filter(x => x.score).sort((a, b) => b.score - a.score || b.at - a.at).slice(0, 20);
+  const rest = items.filter(x => !related.includes(x)).sort((a, b) => b.at - a.at).slice(0, 55 - related.length);
+  const day = at => at ? new Date(at).toLocaleDateString('ko-KR', { year: new Date(at).getFullYear() === new Date().getFullYear() ? undefined : 'numeric', month: 'long', day: 'numeric' }) : '';
+  const tags = tagCounts().slice(0, 12).map(([t, n]) => `#${t} ${n}번`).join(', ');
+  return [...(tags ? [{ date: '', kind: '자주 나온 주제어', text: tags }] : []), ...[...related, ...rest].sort((a, b) => a.at - b.at).map(x => ({ date: day(x.at), kind: x.kind, text: x.text }))];
+}
 async function sendTalk(id, text) {
   if (talkPending || busy) return;
   talkError = '';
@@ -726,7 +762,7 @@ async function sendTalk(id, text) {
   try {
     const c = state.chats.find(x => x.id === id);
     const res = await fetch(AI_CHAT_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(60000), body: JSON.stringify({
-      name: state.profile.catName || '슬라임', tone: state.profile.tone, topic: talkTopic(c),
+      name: state.profile.catName || '슬라임', tone: state.profile.tone, topic: talkTopic(c), memory: memoryFor(c),
       messages: [...c.messages.slice(-30).map(m => ({ role: m.role, text: m.text }))]
     }) });
     const out = await res.json().catch(() => ({}));
@@ -836,16 +872,14 @@ function usageBlock() {
 function renderMe() {
   const p = state.profile, name = p.catName || '나만의 슬라임', s = stats(state), look = slimeLook();
   const first = beadList().find(b => b.at), days = first ? Math.max(1, Math.round((Date.now() - first.at) / 864e5)) : 0;
-  const ins = state.insights?.date === todayKey() && state.insights.lines.length ? state.insights : null;
   $('#main').innerHTML = `<div class="narrow me">
     <section class="me-card me-slime">
       <div class="me-avatar">${miniSlime(look.color)}</div>
       <div class="me-who"><h1>${esc(name)}</h1><p>${days ? `<span>함께한 지 ${days}일</span> · ` : ''}<span>방울 ${beadList().length}개</span>${look.tag ? ` · <span>요즘 #${esc(look.tag)}</span>` : ''}</p></div>
       <button data-action="profile">바꾸기</button>
     </section>
-    ${ins ? `<section class="me-card me-today"><h2>오늘 ${esc(name)}의 말</h2>${ins.lines.map(l => `<p class="me-line">${esc(l.text)}</p>`).join('')}</section>` : ''}
     <section class="me-card"><h2>슬라임이 기록 읽기</h2>
-      <p class="hint">켜면 내가 쓴 <b>생각, 슬라임의 물음에 한 답, 책 문장에 단 메모와 덧붙인 말</b>을 AI(Anthropic Claude)에게 보내 주제어를 붙이고, 하루 한 번 '그땐 / 지금은' 말을 만듭니다. 책에서 옮겨 적은 문장은 보내지 않습니다. 중계소는 글을 저장하지 않고, 결과는 이 기기에만 남습니다.</p>
+      <p class="hint">켜면 내가 쓴 <b>생각, 메모와 덧붙인 말, 질문과 답, 이야기에서 한 말</b>을 AI(Anthropic Claude)에게 보내 주제어를 붙이고, 이야기와 책 정리 때 슬라임이 이걸 <b>기억</b>으로 씁니다. 책에서 옮겨 적은 문장은 내가 골라 이야기할 때만 보냅니다. 중계소는 글을 저장하지 않고, 결과는 이 기기에만 남습니다.</p>
       <div class="me-toggle"><button id="ai-toggle" class="${p.aiConsentAt ? '' : 'primary'}">${p.aiConsentAt ? '끄기' : '켜기'}</button><p class="hint" id="ai-status">${aiStatus()}</p></div>
     </section>
     <section class="me-card"><h2>PC 모드</h2><p class="hint">폰을 노트북에 연결해 이야기할 때 켜 두세요. 이야기 화면이 아래 탭 없이 화면 높이를 다 쓰고, 글씨가 조금 커지고, <b>Enter로 보내고 Shift+Enter로 줄을 바꿉니다.</b> 이야기 화면 오른쪽 위 <b>PC</b> 단추로도 켜고 끌 수 있습니다. 이 기기에만 적용됩니다.</p><div class="me-toggle"><button id="pc-toggle" class="${pcMode() ? '' : 'primary'}">${pcMode() ? 'PC 모드 끄기' : 'PC 모드 켜기'}</button></div></section>
@@ -861,7 +895,7 @@ function renderMe() {
   $('#ai-toggle').onclick = async () => {
     const on = !state.profile.aiConsentAt;
     if (await change(s => { s.profile.aiConsentAt = on ? now() : ''; }, on ? '슬라임이 기록을 읽기 시작합니다.' : '슬라임이 기록 읽기를 멈췄습니다.')) {
-      if (on) { readBackoff = 0; reflectBackoff = 0; await readRecords(); if (route().page === 'me') renderMe(); }
+      if (on) { readBackoff = 0; await readRecords(); if (route().page === 'me') renderMe(); }
     }
   };
 }
@@ -933,6 +967,8 @@ document.addEventListener('click', e => {
     case 'talk-quote': { if (ctxOpen) { ctxOpen = false; document.body.classList.remove('ctx-open'); $('[data-action=talk-ctx]')?.setAttribute('aria-pressed', 'false'); } const el = $('#talk-input'); if (el) { el.value = (el.value ? el.value.replace(/\s*$/, '\n') : '') + `“${btn.dataset.text}” `; el.dispatchEvent(new Event('input')); el.focus(); } break; }
     case 'talk-keep': talkKeep(route().id); break;
     case 'talk-delete': deleteTalk(id); break;
+    case 'summarize': { const b = currentBook(); if (b) summarizeBook(b.id); break; }
+    case 'sum-go': entryTab = btn.dataset.tab; focusRec = id; renderBook(); break;
     case 'backup-now': exportState(); notice('기록을 파일로 내려받았습니다. 파일을 안전한 곳(드라이브 등)에 옮겨 두세요.'); break;
     case 'backup-later': try { localStorage.setItem('backup-snooze', String(Date.now() + 3 * 864e5)); } catch {} syncBackupNudge(); break;
     case 'keep-save': keepFromPane(route().id); break;

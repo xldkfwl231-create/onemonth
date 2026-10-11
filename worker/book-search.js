@@ -7,9 +7,10 @@
  *
  * GET  /?q=독서의 기술   → 책 검색. [{ title, authors, publisher, cover, isbn }, ...]
  * POST /ai/tags          → 기록마다 주제어 1~3개. { items: [{ id, text }], known: [주제어] } → { items: [{ id, tags }] }
- * POST /ai/reflect       → 하루 한 번: '그땐/지금은/그사이' 말 몇 줄과 오늘의 질문 하나
- *                          { name, tone, today, items: [{ id, date, kind, text, tags }] } → { lines: [{ text, ids }], question }
- * POST /ai/chat          → 슬라임과 이야기(토론). { name, tone, topic, messages: [{ role, text }] } → { reply }
+ * POST /ai/chat          → 슬라임과 이야기(토론). { name, tone, topic, memory: [{ date, kind, text }], messages: [{ role, text }] } → { reply }
+ *                          memory = 이 사람이 앱에 남긴 것들 — 슬라임은 이걸 기억으로 삼아 이야기합니다
+ * POST /ai/summary       → 책 한 권 정리. { name, tone, book, entries: [{ id, page, note, more, talk }], questions: [{ id, text, answer, history, talk }], talk }
+ *                          → { line, held: [{ id, why }], open: [{ id, why }], changed: [{ then, now }] }  (책에서 옮겨 적은 문장은 받지 않음)
  * GET  /ai/health        → 열쇠가 들어 있는지만 알려 줌 (열쇠 값은 절대 내보내지 않음)
  *
  * 이 중계소는 기록을 저장하지 않습니다. 받은 글을 AI에 넘기고 답만 돌려줍니다.
@@ -56,11 +57,11 @@ export default {
       if (!env.ANTHROPIC_KEY) return json({ error: 'ANTHROPIC_KEY가 설정되지 않았습니다' }, 503);
       return chat(request, env, json);
     }
-    if (path === '/ai/reflect') {
+    if (path === '/ai/summary') {
       if (request.method !== 'POST') return json({ error: 'POST만 받습니다' }, 405);
       if (!ALLOWED.includes(origin)) return json({ error: '허용되지 않은 주소입니다' }, 403);
       if (!env.ANTHROPIC_KEY) return json({ error: 'ANTHROPIC_KEY가 설정되지 않았습니다' }, 503);
-      return reflect(request, env, json);
+      return summary(request, env, json);
     }
     return bookSearch(request, env, cors);
   },
@@ -161,68 +162,66 @@ async function askClaude(env, { system, user, messages, schema, effort = 'low', 
   catch { return { error: ['AI 답을 읽지 못했습니다', 502] }; }
 }
 
-// ── 슬라임의 하루 말: '그땐 / 지금은 / 그사이' + 오늘의 질문 ─────────────
-const MAX_REFLECT_ITEMS = 60, MAX_REFLECT_TEXT = 400;
-async function reflect(request, env, json) {
+// ── 책 한 권 정리: 붙든 문장 · 아직 답 못 한 질문 · 그사이 바뀐 생각 ─────────────
+// 책에서 옮겨 적은 문장은 받지 않습니다. 이 사람이 쓴 말(메모 · 덧붙임 · 질문 · 답 · 이야기)만으로 정리하고,
+// 문장은 id로만 가리킵니다 — 앱이 자기 기기에 있는 문장을 꺼내 보여 줍니다.
+const MAX_SUM_ENTRIES = 80, MAX_SUM_QUESTIONS = 60, MAX_SUM_TEXT = 400, MAX_SUM_LIST = 10;
+async function summary(request, env, json) {
   let body;
   try { body = await request.json(); } catch { return json({ error: '형식이 올바르지 않습니다' }, 400); }
-  const items = Array.isArray(body?.items) ? body.items : null;
-  if (!items || items.length < 3 || items.length > MAX_REFLECT_ITEMS) return json({ error: `기록은 3~${MAX_REFLECT_ITEMS}개 보내 주세요` }, 400);
-  const clean = [];
-  for (const it of items) {
-    if (typeof it?.id !== 'string' || it.id.length > 100 || typeof it?.text !== 'string' || !it.text.trim()) return json({ error: '기록 형식이 올바르지 않습니다' }, 400);
-    clean.push({ id: it.id, date: String(it.date || '').slice(0, 10), kind: String(it.kind || '').slice(0, 10), text: it.text.slice(0, MAX_REFLECT_TEXT), tags: (Array.isArray(it.tags) ? it.tags : []).filter(t => typeof t === 'string').slice(0, 3) });
-  }
-  const name = typeof body.name === 'string' && body.name.trim() ? body.name.trim().slice(0, 30) : '슬라임';
-  const tone = body.tone === 'you' ? 'you' : 'we';
-  const today = typeof body.today === 'string' ? body.today.slice(0, 10) : '';
-
+  const str = (v, n = MAX_SUM_TEXT) => typeof v === 'string' ? v.slice(0, n) : '';
+  const list = v => (Array.isArray(v) ? v : []).filter(x => typeof x === 'string' && x.trim()).slice(-MAX_SUM_LIST).map(x => x.slice(0, MAX_SUM_TEXT));
+  const id = v => typeof v === 'string' && v && v.length <= 100 ? v : null;
+  if (!Array.isArray(body?.entries) || !Array.isArray(body?.questions) || body.entries.length > MAX_SUM_ENTRIES || body.questions.length > MAX_SUM_QUESTIONS) return json({ error: '책 기록 형식이 올바르지 않습니다' }, 400);
+  const entries = body.entries.map(e => ({ id: id(e?.id), page: str(e?.page, 20), note: str(e?.note), more: list(e?.more), talk: list(e?.talk) })).filter(e => e.id);
+  const questions = body.questions.map(q => ({ id: id(q?.id), text: str(q?.text), answer: str(q?.answer), history: list(q?.history), talk: list(q?.talk) })).filter(q => q.id && q.text);
+  const talk = list(body.talk);
+  const words = entries.some(e => e.note || e.more.length || e.talk.length) || questions.length || talk.length;
+  if (!words) return json({ error: '정리할 내 말이 아직 없습니다' }, 400);
+  const name = str(body.name, 30).trim() || '슬라임', tone = body.tone === 'you' ? 'you' : 'we';
+  const book = { title: str(body.book?.title, 200), author: str(body.book?.author, 100) };
   const system = [
-    `당신은 "${name}"라는 이름의 작은 슬라임입니다. 한 사람이 자기 자신에 대해 적은 기록을 오래 지켜봐 왔습니다.`,
-    '이 사람은 자신을 판단 없이, 본 대로 관찰하는 연습(짐 콜린스의 "버그북")을 하고 있습니다. 당신은 그 관찰을 돕는 거울입니다.',
+    `당신은 "${name}"라는 이름의 작은 슬라임입니다. 이 사람이 책 한 권을 읽으며 남긴 자기 말을 모아 정리해 줍니다.`,
+    '받는 것: 문장마다 이 사람이 단 메모(note)와 덧붙인 말(more), 그 문장으로 나눈 이야기에서 이 사람이 한 말(talk), 이 사람이 쓴 질문과 지금의 답(answer)·예전 답(history). 책 문장 자체는 받지 않습니다.',
     '',
-    '할 일: 기록을 읽고 (1) 이 사람에게 건넬 짧은 말 2~4줄, (2) 오늘 물어볼 질문 1개를 만드세요.',
+    '만들 것:',
+    '- line: 이 책이 이 사람에게 남긴 것을 한 줄로. 이 사람이 쓴 말에 기대어. 80자 이내.',
+    '- held: 이 사람이 가장 오래, 많이 붙든 문장 최대 5개 (entries의 id). why에는 왜 붙들었는지를 이 사람의 말로 60자 이내.',
+    '- open: 아직 답을 못 했거나 답이 흔들리는 질문 최대 5개 (questions의 id). why에는 무엇이 아직 열려 있는지 60자 이내.',
+    '- changed: 그사이 바뀐 생각 최대 4개. then(그땐)과 now(지금은)를 각각 80자 이내로, 예전 답 → 지금의 답, 메모 → 덧붙인 말, 이야기 처음 → 나중의 흐름에서 찾으세요. 바뀐 게 없으면 빈 목록.',
     '',
-    '말(lines) 규칙:',
-    '- 시간에 따라 달라진 게 보이면 "그땐 / 지금은 / 그사이"의 흐름으로 말하세요. 예: "9월엔 회의가 끝나면 기운이 빠진다고 했는데, 요즘은 회의 얘기가 없네. 그사이 뭐가 달라졌을까?"',
-    '- 달라진 게 없으면 요즘 자주 돌아오는 말을 짚으세요. 예: "요즘 \'혼자\'라는 말이 세 번 나왔어."',
-    '- 이 사람이 실제로 쓴 말을 짧게 따옴표로 인용하세요. 기록에 없는 일을 지어내지 마세요.',
-    '- 평가하거나 진단하거나 결론 내리지 마세요. "너는 내향적이야", "좋아졌네", "문제야" 같은 말 금지. 조언도 하지 마세요.',
-    '- 맞는지 확인하는 질문("맞아?")이 아니라, 그사이의 마음을 궁금해하는 말로 끝내도 좋습니다.',
-    '- 한 줄은 80자 이내. 다정한 반말.',
-    tone === 'we'
-      ? '- 당신과 이 사람은 하나입니다. "우리"라고 말하세요. 예: "9월엔 우리 회의 끝나고 지쳤다고 했는데…"'
-      : '- 이 사람을 "너"라고 부르세요. 예: "9월엔 너 회의 끝나고 지쳤다고 했는데…"',
-    '- 각 줄에는 근거가 된 기록의 id를 ids에 넣으세요.',
-    '',
-    '질문(question) 규칙:',
-    '- 최근 기록에서 이어지는, 오늘 하루를 돌아보게 하는 열린 질문 하나. 예/아니오로 답할 수 없게.',
-    '- 50자 이내. 다정한 반말. 판단 금지.',
-    '- 같은 말을 되풀이하지 말고, 최근 기록에서 아직 묻지 않은 쪽을 물으세요.',
+    '규칙:',
+    '- 기록에 없는 일을 지어내지 마세요. 이 사람이 쓴 말을 짧게 인용해도 좋습니다.',
+    '- 이 사람을 평가하거나 진단하지 마세요. 조언도 하지 마세요. 본 대로만.',
+    '- 다정한 반말. ' + (tone === 'we' ? '이 사람을 "우리"라고 부르세요.' : '이 사람을 "너"라고 부르세요.'),
+    '- id는 받은 것 중에서만 고르세요.',
   ].join('\n');
-  const user = JSON.stringify({ 오늘: today, 기록: clean });
+  const user = JSON.stringify({ 책: book, 문장들: entries, 질문들: questions, 책_이야기: talk });
   const schema = {
     type: 'object',
     properties: {
-      lines: { type: 'array', items: { type: 'object', properties: { text: { type: 'string' }, ids: { type: 'array', items: { type: 'string' } } }, required: ['text', 'ids'], additionalProperties: false } },
-      question: { type: 'string' },
+      line: { type: 'string' },
+      held: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, why: { type: 'string' } }, required: ['id', 'why'], additionalProperties: false } },
+      open: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, why: { type: 'string' } }, required: ['id', 'why'], additionalProperties: false } },
+      changed: { type: 'array', items: { type: 'object', properties: { then: { type: 'string' }, now: { type: 'string' } }, required: ['then', 'now'], additionalProperties: false } },
     },
-    required: ['lines', 'question'],
+    required: ['line', 'held', 'open', 'changed'],
     additionalProperties: false,
   };
   const r = await askClaude(env, { system, user, schema, effort: 'medium', maxTokens: 6000 });
   if (r.error) return json({ error: r.error[0] }, r.error[1]);
-  const ids = new Set(clean.map(c => c.id));
-  const lines = (Array.isArray(r.out.lines) ? r.out.lines : [])
-    .filter(l => typeof l?.text === 'string' && l.text.trim())
-    .map(l => ({ text: l.text.trim().slice(0, 120), ids: (Array.isArray(l.ids) ? l.ids : []).filter(id => ids.has(id)).slice(0, 5) }))
-    .slice(0, 4);
-  const question = typeof r.out.question === 'string' ? r.out.question.trim().slice(0, 80) : '';
-  return json({ lines, question, model: MODEL, usage: r.usage });
+  const eIds = new Set(entries.map(e => e.id)), qIds = new Set(questions.map(q => q.id)), o = r.out || {};
+  const pick = (v, ok) => (Array.isArray(v) ? v : []).filter(x => typeof x?.id === 'string' && ok.has(x.id)).filter((x, i, a) => a.findIndex(y => y.id === x.id) === i).slice(0, 5).map(x => ({ id: x.id, why: str(x.why, 120).trim() }));
+  return json({
+    line: str(o.line, 160).trim(),
+    held: pick(o.held, eIds), open: pick(o.open, qIds),
+    changed: (Array.isArray(o.changed) ? o.changed : []).filter(c => typeof c?.then === 'string' && typeof c?.now === 'string' && c.then.trim() && c.now.trim()).slice(0, 4).map(c => ({ then: c.then.trim().slice(0, 160), now: c.now.trim().slice(0, 160) })),
+    model: MODEL, usage: r.usage,
+  });
 }
 
 // ── 슬라임과 이야기 (토론) ──────────────────────────────────────
-const MAX_TURNS = 40, MAX_TURN_TEXT = 1500;
+const MAX_TURNS = 40, MAX_TURN_TEXT = 1500, MAX_MEMORY = 60, MAX_MEMORY_TEXT = 400;
 async function chat(request, env, json) {
   let body;
   try { body = await request.json(); } catch { return json({ error: '형식이 올바르지 않습니다' }, 400); }
@@ -247,6 +246,10 @@ async function chat(request, env, json) {
     author: typeof t.author === 'string' ? t.author.slice(0, 100) : '',
     notes: (Array.isArray(t.notes) ? t.notes : []).filter(n => typeof n === 'string').slice(0, 20).map(n => n.slice(0, 400)),
   };
+  // 기억 — 이 사람이 이 앱에 남긴 것들 (오래된 것부터). 슬라임은 이걸 바탕으로 이어 말합니다.
+  const memory = (Array.isArray(body.memory) ? body.memory : []).slice(-MAX_MEMORY)
+    .filter(m => typeof m?.text === 'string' && m.text.trim())
+    .map(m => `- ${typeof m.date === 'string' && m.date ? `[${m.date.slice(0, 20)}] ` : ''}${typeof m.kind === 'string' ? m.kind.slice(0, 40) + ': ' : ''}${m.text.slice(0, MAX_MEMORY_TEXT).replace(/\s+/g, ' ')}`);
   const about = topic.kind === 'book' ? `책 『${topic.title}』${topic.author ? `(${topic.author})` : ''}` : topic.kind === 'thought' ? '이 사람이 적어 둔 생각 하나' : '이 사람이 꺼내는 이야기';
   const system = [
     `당신은 "${name}"라는 이름의 작은 슬라임입니다. 이 사람이 적는 기록을 오래 지켜봐 온 친구이고, 지금은 ${about}에 대해 함께 이야기합니다.`,
@@ -263,6 +266,17 @@ async function chat(request, env, json) {
     '',
     '배경 (이 사람이 직접 적은 것):',
     JSON.stringify(topic),
+    ...(memory.length ? [
+      '',
+      '기억 (이 사람이 이 앱에 지금까지 남긴 것 — 생각, 메모, 질문과 답, 다른 이야기에서 한 말):',
+      ...memory,
+      '',
+      '기억 쓰는 법:',
+      '- 당신은 이 기억을 모두 알고 있는 슬라임입니다. 지금 이야기와 닿는 기억이 있으면 자연스럽게 꺼내 이어 주세요. 예: "10월 3일엔 출근길이 좋았다고 했잖아."',
+      '- 기억에 없는 일을 지어내지 마세요. 날짜와 말은 적힌 그대로만 쓰세요.',
+      '- 기억을 늘어놓지 말고, 지금 말과 닿는 것 한두 개만.',
+      '- "기억이 안 난다"고 할 필요가 있으면 솔직하게 말하세요.',
+    ] : []),
   ].join('\n');
   const r = await askClaude(env, { system, messages: clean, effort: 'medium', maxTokens: 3000 });
   if (r.error) return json({ error: r.error[0] }, r.error[1]);

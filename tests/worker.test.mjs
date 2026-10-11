@@ -54,25 +54,42 @@ test('health tells whether the key is set without revealing it', async () => {
   assert.equal(JSON.parse(text).key, true);
 });
 
-test('reflect: speaks as the slime, keeps only known ids, trims lengths', async () => {
+test('summary: takes only my own words, keeps known ids, trims lengths', async () => {
   let body;
-  fakeAI({ stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify({ lines: [{ text: '9월엔 우리 회의 끝나고 지쳤다고 했는데, 요즘은 회의 얘기가 없네. 그사이 뭐가 달라졌을까?', ids: ['t1', 'nope'] }, { text: '   ', ids: [] }], question: '오늘 기운이 났던 순간은 어땠어?' }) }] },
+  fakeAI({ stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify({ line: '판단 전에 보기.', held: [{ id: 'e1', why: '메모를 세 번 덧붙임' }, { id: 'nope', why: 'x' }, { id: 'e1', why: '중복' }], open: [{ id: 'q1', why: '아직 답 없음' }, { id: 'e1', why: '질문 아님' }], changed: [{ then: '결론부터', now: '먼저 보기' }, { then: '', now: 'x' }] }) }], usage: { input_tokens: 900, output_tokens: 120 } },
     (url, init) => { body = JSON.parse(init.body); });
-  const items = [{ id: 't1', date: '2026-09-20', kind: '생각', text: '회의만 끝나면 기운이 빠진다', tags: ['회의'] }, { id: 't2', date: '2026-10-03', kind: '생각', text: '리더십', tags: [] }, { id: 't3', date: '2026-10-08', kind: '답', text: '쇼츠', tags: [] }];
-  const res = await call({ name: '말랑', tone: 'we', today: '2026-10-11', items }, { path: '/ai/reflect' });
+  const res = await call({ name: '말랑', tone: 'we', book: { title: '책', author: '저자' },
+    entries: [{ id: 'e1', page: '42', note: '결론부터 내는 편', more: ['회의에서 특히'], talk: ['빨리 끝내고 싶어서'], text: '옮겨 적은 문장' }],
+    questions: [{ id: 'q1', text: '왜 피할까?', answer: '', history: [], talk: [] }], talk: [] }, { path: '/ai/summary' });
   assert.equal(res.status, 200);
   const out = await res.json();
-  assert.equal(out.lines.length, 1);
-  assert.deepEqual(out.lines[0].ids, ['t1']);
-  assert.equal(out.question, '오늘 기운이 났던 순간은 어땠어?');
-  assert.match(body.system, /말랑/); assert.match(body.system, /우리/);
-  assert.equal(body.output_config.effort, 'medium');
+  assert.deepEqual(out.held, [{ id: 'e1', why: '메모를 세 번 덧붙임' }]);
+  assert.deepEqual(out.open, [{ id: 'q1', why: '아직 답 없음' }]);
+  assert.deepEqual(out.changed, [{ then: '결론부터', now: '먼저 보기' }]);
+  assert.deepEqual(out.usage, { input: 900, output: 120 });
+  assert.ok(!body.messages[0].content.includes('옮겨 적은 문장'));   // 책 문장은 AI로 가지 않음
+  assert.equal(body.output_config.format.type, 'json_schema');
 });
 
-test('reflect: needs at least 3 records and an allowed site', async () => {
+test('summary: refuses an empty book and unknown sites', async () => {
   fakeAI({});
-  assert.equal((await call({ items: [{ id: 'a', text: 'x' }] }, { path: '/ai/reflect' })).status, 400);
-  assert.equal((await call({ items: [1, 2, 3].map(i => ({ id: 'a' + i, text: 'x' })) }, { path: '/ai/reflect', origin: 'https://evil.example' })).status, 403);
+  assert.equal((await call({ entries: [{ id: 'e', note: '' }], questions: [] }, { path: '/ai/summary' })).status, 400);
+  assert.equal((await call({ entries: 'x', questions: [] }, { path: '/ai/summary' })).status, 400);
+  assert.equal((await call({ entries: [], questions: [{ id: 'q', text: '왜?' }] }, { path: '/ai/summary', origin: 'https://evil.example' })).status, 403);
+});
+
+test('chat: the slime gets my records as memory', async () => {
+  let body;
+  fakeAI({ stop_reason: 'end_turn', content: [{ type: 'text', text: '출근길 얘기 기억나.' }], usage: { input_tokens: 10, output_tokens: 5 } }, (url, init) => { body = JSON.parse(init.body); });
+  const memory = [{ date: '10월 3일', kind: '생각', text: '혼자 걷는 출근길이 좋았다' }, { kind: '자주 나온 주제어', text: '#혼자 3' }, { text: '' }, ...Array.from({ length: 70 }, (_, i) => ({ date: '', kind: '생각', text: '옛 생각 ' + i }))];
+  const res = await call({ topic: { kind: 'free' }, memory, messages: [{ role: 'user', text: '요즘 어때?' }] }, { path: '/ai/chat' });
+  assert.equal(res.status, 200);
+  assert.ok(!body.system.includes('혼자 걷는 출근길'));   // 70개를 넘겨 맨 뒤 60개만
+  assert.match(body.system, /옛 생각 69/);
+  assert.match(body.system, /기억 쓰는 법/);
+  const res2 = await call({ topic: { kind: 'free' }, memory: memory.slice(0, 2), messages: [{ role: 'user', text: '요즘 어때?' }] }, { path: '/ai/chat' });
+  assert.equal(res2.status, 200);
+  assert.match(body.system, /\[10월 3일\] 생각: 혼자 걷는 출근길이 좋았다/);
 });
 
 test('chat: sends the conversation as turns, merges same-side lines, returns the reply', async () => {

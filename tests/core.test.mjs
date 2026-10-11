@@ -111,3 +111,11 @@ test('the record map links records to their tags and books, and questions to the
   assert.ok(!g.links.some(l => l.s === 't2'));   // 주제어가 아직 없는 생각은 홀로
   assert.equal(g.nodes.length, 3 + 1 + 2 + 1 + 3);
 });
+
+test('a book keeps its summary, and a broken one is dropped', () => {
+  const base = { version: 3, profile: { catName: '', tone: 'we', aiConsentAt: '' }, thoughts: [], answers: [], moments: [], chats: [] };
+  const s = normalize({ ...base, books: [{ id: 'b', title: '책', status: 'reading', entries: [], questions: [], summary: { at: '2026-10-11T00:00:00Z', n: 4, line: '한 줄', held: [{ id: 'e', why: '왜' }, 'x'], open: [], changed: [{ then: '그땐', now: '지금은' }, { then: 1 }] } }] });
+  assert.deepEqual(s.books[0].summary, { at: '2026-10-11T00:00:00Z', n: 4, line: '한 줄', held: [{ id: 'e', why: '왜' }], open: [], changed: [{ then: '그땐', now: '지금은' }] });
+  assert.deepEqual(normalize(JSON.parse(backup(s))), s);
+  assert.equal(normalize({ ...base, books: [{ id: 'b', title: '책', status: 'reading', entries: [], questions: [], summary: 'x' }] }).books[0].summary, null);
+});
