@@ -666,3 +666,12 @@ body[data-page=board] .shell{padding:0}
 .talk-del:active{transform:none}
 .talk-del svg,.talk-del-tool svg{width:19px;height:19px}
 .talk-tools .talk-del-tool{color:var(--muted)}
+
+/* ── 백업 알림 (첫 화면) ── */
+.backup-slot{position:absolute;top:calc(68px + env(safe-area-inset-top));left:14px;right:14px;z-index:3;display:flex;justify-content:center;pointer-events:none}
+.backup-nudge{pointer-events:auto;display:flex;align-items:center;gap:8px;max-width:440px;padding:6px 6px 6px 12px;background:var(--surface);border:3px solid #f0c9a8;border-radius:999px;box-shadow:0 4px 0 #f0c9a8;font-size:13px;color:var(--ink)}
+.backup-nudge svg{width:18px;height:18px;flex:0 0 18px;color:#d9822b}
+.backup-nudge span{flex:1;min-width:0}
+.backup-nudge .primary{min-height:34px;padding:4px 12px;font-size:13px}
+.backup-nudge .quiet{min-height:34px;padding:4px 8px;font-size:12px;color:var(--muted)}
+body.night .backup-nudge{background:#3b3550;border-color:#7a5f8a;box-shadow:0 4px 0 #7a5f8a;color:#f3ecff}

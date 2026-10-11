@@ -4,7 +4,7 @@ import { mountBoard, BOARD_COLORS } from './board.js';
 import { openStore, load, commit, previous } from './storage.js';
 import { BOOK_SEARCH_ENDPOINT, AI_ENDPOINT, AI_REFLECT_ENDPOINT, AI_CHAT_ENDPOINT } from './config.js';
 
-const BUILD = '1012l';   // 폰에서 어떤 판을 보고 있는지 확인용
+const BUILD = '1012m';   // 폰에서 어떤 판을 보고 있는지 확인용
 const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 // 이름 뒤 조사 — 받침이 있으면 이/과, 없으면 가/와 (뚱이가, 말랑이)
@@ -288,9 +288,10 @@ function homeTop() {
 }
 function renderHome() {
   // 슬라임이 떠 있는 동안에는 말풍선만 바꿉니다 — 출렁이던 게 멈추지 않도록
-  if (slime && $('#slime-stage')) { $('#home-bubble').innerHTML = nameBubble(); $('#home-bubble').hidden = !!state.profile.catName; syncBeads(); $('#home-top').innerHTML = homeTop(); return; }
+  if (slime && $('#slime-stage')) { $('#home-bubble').innerHTML = nameBubble(); $('#home-bubble').hidden = !!state.profile.catName; syncBeads(); $('#home-top').innerHTML = homeTop(); syncBackupNudge(); return; }
   $('#main').innerHTML = `<section class="slime-home" aria-label="슬라임">
     <div class="home-top" id="home-top">${homeTop()}</div>
+    <div class="backup-slot" id="backup-nudge">${backupNudgeHtml()}</div>
     <div class="slime-stage" id="slime-stage"><div class="slime-say" id="slime-say" role="status" hidden></div></div>
     <div class="home-bubble" id="home-bubble" ${state.profile.catName ? 'hidden' : ''}>${nameBubble()}</div>
     ${feedHtml()}
@@ -510,7 +511,20 @@ function download(content, filename) {
   const url = URL.createObjectURL(new Blob([content],{type:'application/json'}));
   const a = document.createElement('a'); a.href = url; a.download = filename; a.click(); setTimeout(() => URL.revokeObjectURL(url),10000);
 }
-function exportState(data = state, prefix = 'my-slime') { download(backup(data),`${prefix}-${new Date().toISOString().slice(0,10)}.json`); }
+function exportState(data = state, prefix = 'my-slime') { download(backup(data),`${prefix}-${new Date().toISOString().slice(0,10)}.json`); if (data === state) { try { localStorage.setItem('last-backup', now()); localStorage.removeItem('backup-snooze'); } catch {} syncBackupNudge(); } }
+// 백업 챙기기 — 마지막으로 파일을 내려받은 날을 이 기기에 기억하고, 7일이 넘으면 첫 화면에서 알려 줍니다
+const lastBackup = () => { try { return localStorage.getItem('last-backup') || ''; } catch { return ''; } };
+function backupDue() {
+  const recs = beadList(); if (recs.length + state.chats.length < 3) return null;
+  try { if (Number(localStorage.getItem('backup-snooze') || 0) > Date.now()) return null; } catch {}
+  const last = Date.parse(lastBackup()) || 0, since = last || recs.find(b => b.at)?.at || Date.now(), days = Math.floor((Date.now() - since) / 864e5);
+  return days >= 7 ? { days, never: !last } : null;
+}
+function backupNudgeHtml() {
+  const due = backupDue(); if (!due) return '';
+  return `<div class="backup-nudge" role="status"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v10M7.5 9.5 12 14l4.5-4.5M5 18.5h14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>${due.never ? `기록을 모은 지 ${due.days}일, 아직 백업한 적이 없어요` : `마지막 백업이 ${due.days}일 전이에요`}</span><button class="primary" data-action="backup-now">백업</button><button class="quiet" data-action="backup-later" aria-label="3일 뒤에 다시 알리기">나중에</button></div>`;
+}
+function syncBackupNudge() { const el = $('#backup-nudge'); if (el) el.innerHTML = backupNudgeHtml(); }
 function aiStatus() {
   const all = aiSources(), done = all.filter(x => state.readings[x.id]?.h === x.h).length;
   const today = state.insights?.date === todayKey() ? ` 오늘의 말 ${state.insights.lines.length}줄을 만들어 뒀습니다.` : '';
@@ -837,7 +851,7 @@ function renderMe() {
     <section class="me-card"><h2>PC 모드</h2><p class="hint">폰을 노트북에 연결해 이야기할 때 켜 두세요. 이야기 화면이 아래 탭 없이 화면 높이를 다 쓰고, 글씨가 조금 커지고, <b>Enter로 보내고 Shift+Enter로 줄을 바꿉니다.</b> 이야기 화면 오른쪽 위 <b>PC</b> 단추로도 켜고 끌 수 있습니다. 이 기기에만 적용됩니다.</p><div class="me-toggle"><button id="pc-toggle" class="${pcMode() ? '' : 'primary'}">${pcMode() ? 'PC 모드 끄기' : 'PC 모드 켜기'}</button></div></section>
     <section class="me-card"><h2>AI 사용량</h2>${usageBlock()}</section>
     <section class="me-card"><h2>보관</h2>
-      <p class="hint">기록은 이 폰의 브라우저에만 있습니다. 가끔 파일로 내려받아 두세요.</p>
+      <p class="hint">기록은 이 폰의 브라우저에만 있습니다. 가끔 파일로 내려받아 두세요. <b>${lastBackup() ? `마지막 백업: ${esc(dateLabel(lastBackup()))}` : '아직 백업한 적이 없습니다.'}</b></p>
       <button id="open-backup">백업과 복원</button>
     </section>
     <p class="me-foot">본 대로, 거짓 없이 · <span id="me-build">${esc($('#save-status').textContent)}</span></p>
@@ -919,6 +933,8 @@ document.addEventListener('click', e => {
     case 'talk-quote': { if (ctxOpen) { ctxOpen = false; document.body.classList.remove('ctx-open'); $('[data-action=talk-ctx]')?.setAttribute('aria-pressed', 'false'); } const el = $('#talk-input'); if (el) { el.value = (el.value ? el.value.replace(/\s*$/, '\n') : '') + `“${btn.dataset.text}” `; el.dispatchEvent(new Event('input')); el.focus(); } break; }
     case 'talk-keep': talkKeep(route().id); break;
     case 'talk-delete': deleteTalk(id); break;
+    case 'backup-now': exportState(); notice('기록을 파일로 내려받았습니다. 파일을 안전한 곳(드라이브 등)에 옮겨 두세요.'); break;
+    case 'backup-later': try { localStorage.setItem('backup-snooze', String(Date.now() + 3 * 864e5)); } catch {} syncBackupNudge(); break;
     case 'keep-save': keepFromPane(route().id); break;
     case 'keep-pick': { const c = state.chats.find(x => x.id === route().id), box = $('#keep-text'); if (c && box) { box.value = (box.value.trim() ? box.value.replace(/\s*$/, '\n') : '') + c.messages[+btn.dataset.i].text; keepDrafts[c.id] = box.value; box.focus(); } break; }
     case 'delete-more': deleteMore(id); break;
