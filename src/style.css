@@ -750,3 +750,10 @@ body.night .backup-nudge{background:#3b3550;border-color:#7a5f8a;box-shadow:0 4p
 button.sum-change{display:block;width:100%;min-height:0;text-align:left;border:0;border-left:4px solid var(--mint-line);border-radius:0 12px 12px 0;box-shadow:none;color:var(--ink);font:inherit}
 button.sum-change:active{transform:none}
 .sum-change .about{display:block;font-size:11.5px;color:var(--muted);margin-bottom:2px}
+
+/* ── 이어서 꺼낼 말: 슬라임의 답 아래 단추 (누르면 입력칸으로) ── */
+.talk-next{display:flex;flex-wrap:wrap;gap:6px;align-self:stretch}
+.talk-next .chip{min-height:0;padding:6px 12px;border:2px dashed var(--mint-line);border-radius:999px;background:var(--surface);box-shadow:none;font:400 13px/1.4 var(--body);color:#2f5a3a;text-align:left}
+.talk-next .chip:hover{border-style:solid;border-color:var(--mint)}
+.talk-next .chip:active{transform:none;background:var(--mint-pale)}
+.desk .talk-next .chip{font-size:12.5px;padding:4px 11px}
