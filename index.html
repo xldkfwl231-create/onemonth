@@ -4,12 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <script>
-    // PC 모드면 폰에서도 노트북처럼 — 화면을 노트북 너비로 그린 뒤 폰 크기에 맞게 줄여 보여 줍니다. 그리기 전에 정해야 배율이 맞습니다.
-    // 가로로 눕히면 1280, 세로면 820. 이미 넓은 화면(노트북·DeX)에서는 그대로. (src/app.js의 applyViewport와 같은 셈)
+    // PC 모드면 폰에서도 이야기 화면(#talk/…)만 노트북처럼 — 화면을 노트북 너비로 그린 뒤 폰 크기에 맞게 줄여 보여 줍니다. 그리기 전에 정해야 배율이 맞습니다.
+    // 가로로 눕히면 1280, 세로면 820. 이미 넓은 화면(노트북·DeX)에서는 그대로. (src/app.js의 pcWidth와 같은 셈)
     (function () { try {
       var on = localStorage.getItem('pc-mode') === '1' || (localStorage.getItem('pc-mode') == null && localStorage.getItem('enter-sends') === '1');
       var land = matchMedia('(orientation: landscape)').matches, real = land ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height);
-      if (on && real < 1100) { document.querySelector('meta[name=viewport]').content = 'width=' + (land ? 1280 : 820) + ', viewport-fit=cover'; history.scrollRestoration = 'manual'; }   // 새로 열 때 예전 배율을 되살리지 않게
+      if (on && real < 1100 && /^#talk\/./.test(location.hash)) { document.querySelector('meta[name=viewport]').content = 'width=' + (land ? 1280 : 820) + ', viewport-fit=cover'; history.scrollRestoration = 'manual'; }   // 새로 열 때 예전 배율을 되살리지 않게
     } catch (e) {} })();
   </script>
   <meta name="theme-color" content="#FFF6EA">

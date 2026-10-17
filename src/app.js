@@ -4,7 +4,7 @@ import { mountBoard, BOARD_COLORS } from './board.js';
 import { openStore, load, commit, previous } from './storage.js';
 import { BOOK_SEARCH_ENDPOINT, AI_ENDPOINT, AI_SUMMARY_ENDPOINT, AI_CHAT_ENDPOINT } from './config.js';
 
-const BUILD = '1017d';   // 폰에서 어떤 판을 보고 있는지 확인용
+const BUILD = '1017e';   // 폰에서 어떤 판을 보고 있는지 확인용
 const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 // 이름 뒤 조사 — 받침이 있으면 이/과, 없으면 가/와 (뚱이가, 말랑이)
@@ -623,15 +623,16 @@ function talkListHtml(currentId, only) {
 function pcMode() {
   try { const v = localStorage.getItem('pc-mode'); if (v === '1' || v === '0') return v === '1'; return localStorage.getItem('enter-sends') === '1'; } catch { return false; }
 }
-// PC 모드면 폰에서도 노트북처럼 보입니다 — 배율은 index.html 머리에서 그리기 전에 정하므로, 켜고 끌 때는 새로 엽니다.
-// 폰을 돌리면 너비(가로 1280 · 세로 820)만 바꿔 줍니다.
-const pcWidth = () => { const land = matchMedia('(orientation: landscape)').matches, real = land ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height); return pcMode() && real < 1100 ? (land ? 1280 : 820) : 0; };
-function setPcMode(on) {
-  try { localStorage.setItem('pc-mode', on ? '1' : '0'); localStorage.removeItem('enter-sends'); } catch {}
+// PC 모드면 폰에서도 이야기 화면만 노트북처럼 보입니다 — 배율은 index.html 머리에서 그리기 전에 정하므로,
+// 이야기 화면에 들고 날 때와 PC 모드를 켜고 끌 때는 새로 엽니다. 폰을 돌리면 너비(가로 1280 · 세로 820)만 바꿔 줍니다.
+const pcWidth = () => { const land = matchMedia('(orientation: landscape)').matches, real = land ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height); return pcMode() && real < 1100 && /^#talk\/./.test(location.hash) ? (land ? 1280 : 820) : 0; };
+// 지금 배율이 이 화면에 맞지 않으면 새로 엽니다. 그냥 새로고침하면 예전 배율이 되살아나서, 주소를 살짝 바꿔 엽니다 (열린 뒤 지움)
+function syncViewport() {
   const scaled = !$('meta[name=viewport]').content.startsWith('width=device-width');
-  // 폰에서만: 넓게 그리기를 켜거나 끄려면 새로 열어야 배율이 맞습니다. 그냥 새로고침하면 예전 배율이 되살아나서, 주소를 살짝 바꿔 엽니다 (열린 뒤 지움)
-  if (!!pcWidth() !== scaled) location.replace(`${location.pathname}?v=${Date.now()}${location.hash}`);
+  if (!!pcWidth() === scaled) return false;
+  location.replace(`${location.pathname}?v=${Date.now()}${location.hash}`); return true;
 }
+function setPcMode(on) { try { localStorage.setItem('pc-mode', on ? '1' : '0'); localStorage.removeItem('enter-sends'); } catch {} syncViewport(); }
 matchMedia('(orientation: landscape)').addEventListener('change', () => { const w = pcWidth(); if (w) $('meta[name=viewport]').content = `width=${w}, viewport-fit=cover`; });
 // PC 모드면 Enter로 보냄. 아니면 넓은 화면·마우스일 때만
 const enterSendsPref = () => pcMode() || matchMedia('(min-width: 760px), (pointer: fine)').matches;
@@ -922,7 +923,7 @@ const GUIDE = [
   ['이야기', [
     ['먼저 말하기', '이야기는 내가 먼저 꺼내요. 슬라임은 이 앱에 남긴 기록을 기억하고 이어 말해요.'],
     ['남기기', '이야기 끝에 내 말을 처음 기록으로 돌려 남겨요 (질문 → 지금의 답, 문장 · 생각 → 덧붙이기).'],
-    ['PC 모드', '폰에서도 노트북처럼 보기 · Enter 보내기 · Shift+Enter 줄바꿈 · Ctrl+S 남기기.'],
+    ['PC 모드', '이야기 화면을 폰에서도 노트북처럼 · Enter 보내기 · Shift+Enter 줄바꿈 · Ctrl+S 남기기.'],
   ]],
 ];
 const guideHtml = () => `<details class="me-card guide" id="guide" ${guideOpen ? 'open' : ''}><summary><h2>슬라임 다루는 법</h2></summary>${GUIDE.map(([h, rows]) => `<h3>${h}</h3><dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>`).join('')}</details>`;
@@ -941,7 +942,7 @@ function renderMe() {
       <p class="hint">켜면 내가 쓴 <b>생각, 메모와 덧붙인 말, 질문과 답, 이야기에서 한 말</b>을 AI(Anthropic Claude)에게 보내 주제어를 붙이고, 이야기와 책 정리 때 슬라임이 이걸 <b>기억</b>으로 씁니다. 책에서 옮겨 적은 문장은 내가 골라 이야기할 때만 보냅니다. 중계소는 글을 저장하지 않고, 결과는 이 기기에만 남습니다.</p>
       <div class="me-toggle"><button id="ai-toggle" class="${p.aiConsentAt ? '' : 'primary'}">${p.aiConsentAt ? '끄기' : '켜기'}</button><p class="hint" id="ai-status">${aiStatus()}</p></div>
     </section>
-    <section class="me-card"><h2>PC 모드</h2><p class="hint">켜면 <b>폰에서도 노트북처럼</b> 넓은 화면을 줄여서 보여 줍니다(가로로 눕히면 더 넓게). 이야기는 왼쪽에 기록 목록과 책, 오른쪽에 대화로 나오고, <b>Enter로 보내고 Shift+Enter로 줄을 바꿉니다.</b> 이야기 화면 오른쪽 위 <b>PC</b> 단추로도 켜고 끌 수 있습니다. 이 기기에만 적용됩니다.</p><div class="me-toggle"><button id="pc-toggle" class="${pcMode() ? '' : 'primary'}">${pcMode() ? 'PC 모드 끄기' : 'PC 모드 켜기'}</button></div></section>
+    <section class="me-card"><h2>PC 모드</h2><p class="hint">켜면 <b>이야기 화면이 폰에서도 노트북처럼</b> 넓은 화면을 줄여서 보입니다(가로로 눕히면 더 넓게). 다른 화면은 그대로입니다. 이야기는 왼쪽에 기록 목록과 책, 오른쪽에 대화로 나오고, <b>Enter로 보내고 Shift+Enter로 줄을 바꿉니다.</b> 이야기 화면 오른쪽 위 <b>PC</b> 단추로도 켜고 끌 수 있습니다. 이 기기에만 적용됩니다.</p><div class="me-toggle"><button id="pc-toggle" class="${pcMode() ? '' : 'primary'}">${pcMode() ? 'PC 모드 끄기' : 'PC 모드 켜기'}</button></div></section>
     <section class="me-card"><h2>AI 사용량</h2>${usageBlock()}</section>
     <section class="me-card"><h2>보관</h2>
       <p class="hint">기록은 이 폰의 브라우저에만 있습니다. 가끔 파일로 내려받아 두세요. <b>${lastBackup() ? `마지막 백업: ${esc(dateLabel(lastBackup()))}` : '아직 백업한 적이 없습니다.'}</b></p>
@@ -950,7 +951,7 @@ function renderMe() {
     <p class="me-foot">본 대로, 거짓 없이 · <span id="me-build">${esc($('#save-status').textContent)}</span></p>
   </div>`;
   if (guideOpen) { guideOpen = false; setTimeout(() => $('#guide')?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 60); }
-  $('#pc-toggle').onclick = () => { setPcMode(!pcMode()); renderMe(); notice(pcMode() ? 'PC 모드를 켰습니다. 폰에서도 노트북처럼 보이고 Enter로 보냅니다.' : 'PC 모드를 껐습니다.'); };
+  $('#pc-toggle').onclick = () => { setPcMode(!pcMode()); renderMe(); notice(pcMode() ? 'PC 모드를 켰습니다. 이야기 화면이 노트북처럼 보이고 Enter로 보냅니다.' : 'PC 모드를 껐습니다.'); };
   $('#open-backup').onclick = () => { if (ready && !busy) settings(); };
   $('#ai-toggle').onclick = async () => {
     const on = !state.profile.aiConsentAt;
@@ -1044,13 +1045,13 @@ document.addEventListener('click', e => {
     case 'delete-more': deleteMore(id); break;
     case 'ask-from': recordEditor('questions', book, undefined, false, id); break;
     case 'talk-ctx': ctxOpen = !ctxOpen; renderTalk(route().id); break;
-    case 'pc-mode': { setPcMode(!pcMode()); ctxOpen = false; render(); notice(pcMode() ? 'PC 모드: 폰에서도 노트북처럼 보이고 Enter로 보냅니다.' : 'PC 모드를 껐습니다.'); break; }
+    case 'pc-mode': { setPcMode(!pcMode()); ctxOpen = false; render(); notice(pcMode() ? 'PC 모드: 이야기 화면이 노트북처럼 보이고 Enter로 보냅니다.' : 'PC 모드를 껐습니다.'); break; }
     case 'talk-retry': { const c = state.chats.find(x => x.id === route().id); if (c?.messages.at(-1)?.role === 'user') sendTalk(c.id, ''); break; }
     case 'usage-reset': change(s => { s.usage = emptyUsage(); }, 'AI 사용량을 0부터 다시 셉니다.'); break;
     case 'edit-answer': answerEditor('', id); break;
   }
 });
-window.addEventListener('hashchange',() => { if (dialog.open) closeModal(); render(); window.scrollTo(0,0); });
+window.addEventListener('hashchange',() => { if (syncViewport()) return; if (dialog.open) closeModal(); render(); window.scrollTo(0,0); });
 // 서재: Ctrl+S(⌘S)로 남기기 — 이야기에서 내가 한 말이 있을 때
 document.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's' && route().page === 'talk' && route().id && !dialog.open && $('[data-action=talk-keep]')) { e.preventDefault(); talkKeep(route().id); } });
 let resizeTimer = 0;
