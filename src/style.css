@@ -600,7 +600,7 @@ body[data-page=home] #toast,body[data-page=home] #usage-pill{bottom:calc(160px +
 .side-title{min-width:0;flex:1;display:flex;align-items:baseline;gap:6px}
 .side-title b{flex:1;min-width:0;font:400 14px/1.3 var(--head);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .side-title .text-link{flex:0 0 auto;font-size:11.5px}
-.recs-list{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:2px;padding:2px 0}
+.recs-list{position:relative;flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:2px;padding:2px 0}
 .rec-row{flex:0 0 auto;display:flex;flex-direction:column;align-items:stretch;gap:1px;width:100%;min-height:0;padding:6px 9px;text-align:left;border:0;border-radius:10px;background:transparent;box-shadow:none;color:var(--ink);font:400 13px/1.45 var(--body);text-decoration:none}
 .rec-row:hover{background:rgba(255,255,255,.6)}
 .rec-row:active{transform:none}

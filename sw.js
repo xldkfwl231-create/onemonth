@@ -1,10 +1,11 @@
-const CACHE = 'reading-notebook-shell-v8-22';
+const CACHE = 'reading-notebook-shell-v8-24';
 const FILES = ['./','./index.html','./src/app.js','./src/core.js','./src/storage.js','./src/slime.js','./src/board.js','./vendor/three.module.min.js','./vendor/three.core.min.js','./src/style.css','./src/config.js','./icon.svg','./icon-192.png','./icon-512.png','./icon-maskable-512.png','./apple-touch-icon.png','./manifest.json'];
 self.addEventListener('install',event => { event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(FILES)).then(() => self.skipWaiting())); });
 self.addEventListener('activate',event => { event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k.startsWith('reading-notebook-shell-') && k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
 self.addEventListener('fetch',event => {
   const url = new URL(event.request.url);
   url.hash = '';
+  if (event.request.mode === 'navigate') url.search = '';   // PC 모드를 켜고 끌 때 붙는 ?v= 도 같은 첫 화면으로
   if (event.request.method !== 'GET' || url.origin !== self.location.origin) return;
   const known = FILES.map(f => new URL(f,self.registration.scope).href);
   if (!known.includes(url.href)) return;
