@@ -606,7 +606,12 @@ body[data-page=home] #toast,body[data-page=home] #usage-pill{bottom:calc(160px +
 .rec-row:active{transform:none}
 .rec-row.on{background:var(--surface);box-shadow:inset 3px 0 0 var(--mint-deep)}
 .rec-row.whole .rec-text{font-family:var(--head);color:var(--mint-deep)}
-.rec-text{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere;word-break:keep-all}
+.rec-line{display:flex;align-items:flex-start;gap:7px;min-width:0}
+.rec-no{flex:0 0 auto;min-width:22px;padding:0 5px;border-radius:6px;background:var(--surface);font:400 11px/18px var(--head);color:var(--mint-deep);text-align:center;margin-top:1px}
+.rec-row.q .rec-no{color:var(--sky-ink)}
+.rec-row.on .rec-no{background:var(--mint);color:#1f3d27}
+.rec-text{flex:1;min-width:0;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere;word-break:keep-all}
+.rec-row.numbered .rec-kind{padding-left:29px}
 .rec-row.talked .rec-text{font-weight:700}
 .rec-kind{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted)}
 .rec-row.q .rec-kind{color:var(--sky-ink)}

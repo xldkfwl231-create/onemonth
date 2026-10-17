@@ -139,3 +139,9 @@ test('seen self counts tags by month, new and faded tags, held questions and cha
   assert.deepEqual(r.changed[0], { id: 'q2', book: 'b', text: '바뀐 질문', then: '그땐 저래', now: '지금은 이래' });
   assert.equal(r.talked[0].n, 2);
 });
+test('sentence titles survive a backup round trip and bad ones are dropped', () => {
+  const s = emptyState(); s.titles = { e1: { t: '고슴도치 찾기', h: '123' }, e2: { t: 7 }, e3: 'x', [ 'x'.repeat(101) ]: { t: 'long id' } };
+  const back = normalize(JSON.parse(backup(s)).data);
+  assert.deepEqual(back.titles, { e1: { t: '고슴도치 찾기', h: '123' } });
+  assert.deepEqual(normalize({ version: 2, books: [], thoughts: [] }).titles, {});   // 예전 백업에는 없음
+});
