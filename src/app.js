@@ -4,7 +4,7 @@ import { mountBoard, BOARD_COLORS } from './board.js';
 import { openStore, load, commit, previous } from './storage.js';
 import { BOOK_SEARCH_ENDPOINT, AI_ENDPOINT, AI_SUMMARY_ENDPOINT, AI_CHAT_ENDPOINT } from './config.js';
 
-const BUILD = '1017a';   // 폰에서 어떤 판을 보고 있는지 확인용
+const BUILD = '1017b';   // 폰에서 어떤 판을 보고 있는지 확인용
 const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 // 이름 뒤 조사 — 받침이 있으면 이/과, 없으면 가/와 (뚱이가, 말랑이)
@@ -708,7 +708,7 @@ function renderTalk(id) {
   const pending = talkPending === id, on = !!state.profile.aiConsentAt, pc = pcMode(), wide = pc || matchMedia('(min-width: 760px)').matches, enterSends = enterSendsPref();
   document.body.classList.toggle('pc', pc); document.body.classList.toggle('desk-on', wide); document.body.classList.toggle('ctx-open', ctxOpen);
   $('#main').innerHTML = `<div class="talk-desk ${wide ? 'desk' : ''}">
-    ${wide ? deskRailHtml(c, home) : ''}
+    ${wide ? deskSideHtml(c, home) : ''}
     <section class="talk" aria-label="이야기">
       <div class="talk-head"><a class="back talk-back" href="${home.href}">${home.label}</a><h1 class="talk-title"><span class="status-tag">${talkKind[c.topic.kind]}</span><span class="title-text" title="눌러서 전체 보기">${esc(c.topic.kind === 'free' ? `${wa(name)} 이야기` : talkFull(c))}</span></h1><div class="talk-tools">${c.messages.some(m => m.role === 'user') ? `<button class="quiet" data-action="talk-keep">${keepLabel(c)}</button>` : ''}${c.messages.length ? `<button class="tool talk-del-tool" data-action="talk-delete" data-id="${esc(c.id)}" aria-label="이 이야기 지우기" title="이야기 지우기">${TRASH}</button>` : ''}<button class="tool ctx-toggle" data-action="talk-ctx" aria-pressed="${ctxOpen}" aria-label="이야기의 배경 보기" title="배경 보기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h11l3 3v13H5z M9 10h7 M9 14h7" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></button><button class="tool" data-action="pc-mode" aria-pressed="${pc}" aria-label="PC 모드 ${pc ? '끄기' : '켜기'}" title="PC 모드"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14v9H5z M3 18h18" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg><span>PC</span></button></div></div>
       <div class="talk-log" id="talk-log">
@@ -721,10 +721,9 @@ function renderTalk(id) {
          : `<div class="talk-form off"><p>이야기하려면 '나'에서 <b>슬라임이 기록 읽기</b>를 켜 주세요.</p><a class="text-link" href="#me">켜러 가기 ›</a></div>`}
     </section>
     <aside class="talk-ctx" aria-label="이야기의 배경"><button class="quiet ctx-close" data-action="talk-ctx">닫기 ✕</button><div class="ctx-more">${talkContextHtml(c)}</div></aside>
-    ${wide ? deskRecsHtml(c) : ''}
   </div>`;
   $$('.talk-back').forEach(a => { a.onclick = () => { if (home.tab) entryTab = home.tab; if (home.filter) talkFilter = home.filter; focusRec = c.topic.kind === 'book' || c.topic.kind === 'free' ? '' : c.topic.ref; }; });
-  $('.desk-recs .on')?.scrollIntoView({ block: 'nearest' });
+  $('.recs-list .on')?.scrollIntoView({ block: 'nearest' });
   $('.title-text').onclick = e => e.currentTarget.classList.toggle('open');   // 긴 문장은 두 줄까지, 누르면 전체
   const log = $('#talk-log'); if (log) { log.scrollTop = log.scrollHeight; log.lastElementChild?.scrollIntoView({ block: 'end' }); }
   const input = $('#talk-input');
@@ -822,36 +821,38 @@ function saveKeep(c, target, text) {
     else s.thoughts.push({ id: uid(), createdAt: now(), text, more: [] });
   }, done);
 }
-// ── PC 서재: 왼쪽 아래 책 · 가운데 이야기 · 오른쪽 이 책의 기록(이야기 목록처럼) ──────────
+// ── PC 서재: 왼쪽 위 이 책의 기록(이야기 목록처럼) · 왼쪽 아래 책 · 오른쪽 이야기 ──────────
 const cutN = (t, n) => t.length > n ? t.slice(0, n) + '…' : t;
 // 이야기가 어느 갈래에 속하나 — 책 id, 아니면 'thought'(생각 · 새 이야기 · 물음)
 const laneOf = c => LANE[c.topic.kind] === 'book' ? (c.topic.kind === 'book' ? c.topic.ref : c.topic.book) : 'thought';
-function deskRailHtml(c, home) {
-  const lane = laneOf(c), recent = id => Math.max(0, ...state.chats.filter(x => x.messages.length && laneOf(x) === id).map(lastAt));
-  const books = [...state.books].sort((a, b) => recent(b.id) - recent(a.id) || (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0));
-  return `<aside class="desk-rail" aria-label="책 고르기"><a class="rail-back talk-back" href="${home.href}" aria-label="${esc(home.label.replace('← ', ''))}(으)로 돌아가기" title="돌아가기">←</a>
-    <div class="rail-books">${books.map(b => `<button class="rail-book ${b.id === lane ? 'on' : ''}" data-action="desk-book" data-id="${esc(b.id)}" title="${esc(b.title)}" aria-label="『${esc(b.title)}』 이야기" ${b.id === lane ? 'aria-current="true"' : ''}>${cover(b)}</button>`).join('')}
-    <button class="rail-book rail-thought ${lane === 'thought' ? 'on' : ''}" data-action="desk-thoughts" title="생각" aria-label="생각 이야기" ${lane === 'thought' ? 'aria-current="true"' : ''}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 15.5c-1.9-.4-3-2-2.7-3.8.3-1.6 1.7-2.7 3.3-2.6.6-2.5 3-4.1 5.6-3.6 1.4.3 2.6 1.1 3.3 2.3 2.4-.4 4.6 1.3 4.9 3.7.3 2.4-1.5 4.4-3.9 4.5H5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg></button></div></aside>`;
-}
-// 오른쪽: 이 책의 문장 · 메모 · 질문을 이야기 목록처럼. 하나를 고르면 가운데에서 그 기록으로 이야기합니다
-function deskRecsHtml(c) {
+// 왼쪽 칸 (보통의 대화 앱처럼): 위에 이 책의 기록을 이야기 목록으로, 맨 아래에 책 표지. 하나를 고르면 오른쪽에서 그 기록으로 이야기합니다
+function deskSideHtml(c, home) {
   const { book } = talkSubject(c), lane = laneOf(c), name = state.profile.catName || '슬라임';
-  const row = (kind, ref, bookId, label, text, sub, at, cls = '') => {
+  const row = (kind, ref, bookId, label, text, at, cls = '') => {
     const t = talkOf(kind, ref), n = t?.messages.length || 0, cur = c.topic.kind === kind && c.topic.ref === ref;
-    return { at: Math.max(Date.parse(at) || 0, n ? lastAt(t) : 0), html: `<button class="rec-row ${cls} ${cur ? 'on' : ''}" data-action="talk-${kind}" data-id="${esc(ref)}"${bookId ? ` data-book="${esc(bookId)}"` : ''}${cur ? ' aria-current="true"' : ''}><span class="rec-kind">${esc(label)}${n ? `<em>${n}마디</em>` : ''}</span><span class="rec-text">${esc(text)}</span>${sub ? `<small>${esc(sub)}</small>` : ''}</button>` };
+    return { at: Math.max(Date.parse(at) || 0, n ? lastAt(t) : 0), html: `<button class="rec-row ${cls} ${n ? 'talked' : ''} ${cur ? 'on' : ''}" data-action="talk-${kind}" data-id="${esc(ref)}"${bookId ? ` data-book="${esc(bookId)}"` : ''}${cur ? ' aria-current="true"' : ''}><span class="rec-text">${esc(text)}</span><span class="rec-kind">${esc(label)}${n ? `<em>${n}마디</em>` : ''}</span></button>` };
   };
   const list = rows => rows.sort((a, b) => b.at - a.at).map(r => r.html).join('');
+  let head, body;
   if (lane !== 'thought' && book) {
-    const rows = [...book.entries.map(e => row('entry', e.id, book.id, e.page ? `문장 · p. ${e.page}` : '문장', e.text, e.note, e.createdAt)),
-      ...book.questions.map(q => row('question', q.id, book.id, q.answer ? '질문 · 답 있음' : '질문', q.text, q.answer, q.createdAt, 'q'))];
-    return `<aside class="desk-recs" aria-label="이 책의 기록"><div class="recs-head">${cover(book)}<div><b>${esc(book.title)}</b><small>${esc(book.author || '')}</small><a class="text-link" href="#book/${esc(book.id)}">책 열기 ›</a></div></div>
-      <div class="recs-list">${row('book', book.id, '', '책 전체', '이 책 전체로 이야기하기', `문장 ${book.entries.length} · 질문 ${book.questions.length}`, '', 'whole').html}${list(rows) || '<p class="hint">책 화면에서 문장이나 질문을 남기면 여기 쌓입니다.</p>'}</div></aside>`;
+    head = `<b>${esc(book.title)}</b><a class="text-link" href="#book/${esc(book.id)}">책 열기 ›</a>`;
+    const rows = [...book.entries.map(e => row('entry', e.id, book.id, e.page ? `문장 · p. ${e.page}` : '문장', e.note ? `${e.text} — ${e.note}` : e.text, e.createdAt)),
+      ...book.questions.map(q => row('question', q.id, book.id, q.answer ? '질문 · 답 있음' : '질문', q.text, q.createdAt, 'q'))];
+    body = row('book', book.id, '', `문장 ${book.entries.length} · 질문 ${book.questions.length}`, '이 책 전체로 이야기', '', 'whole').html + (list(rows) || '<p class="hint">책 화면에서 문장이나 질문을 남기면 여기 쌓입니다.</p>');
+  } else {
+    head = `<b>생각</b><a class="text-link" href="#thoughts">생각 탭 ›</a>`;
+    const free = state.chats.filter(x => x.topic.kind === 'free' && x.messages.length).map(x => ({ at: lastAt(x), html: `<a class="rec-row talked ${x.id === c.id ? 'on' : ''}" href="#talk/${esc(x.id)}"${x.id === c.id ? ' aria-current="true"' : ''}><span class="rec-text">${esc(talkName(x))}</span><span class="rec-kind">${esc(wa(name))} 이야기<em>${x.messages.length}마디</em></span></a>` }));
+    const rows = [...state.thoughts.slice(-40).map(t => row('thought', t.id, '', `생각 · ${dayShort(t.createdAt)}`, t.text, t.createdAt)),
+      ...state.answers.slice(-20).map(a => row('answer', a.id, '', `${name}의 물음`, a.prompt, a.createdAt, 'q')), ...free];
+    body = `<button class="rec-row whole" data-action="talk-free"><span class="rec-text">＋ 새 이야기</span><span class="rec-kind">주제 없이</span></button>${list(rows)}`;
   }
-  const free = state.chats.filter(x => x.topic.kind === 'free' && x.messages.length).map(x => ({ at: lastAt(x), html: `<a class="rec-row ${x.id === c.id ? 'on' : ''}" href="#talk/${esc(x.id)}"${x.id === c.id ? ' aria-current="true"' : ''}><span class="rec-kind">${esc(wa(name))} 이야기<em>${x.messages.length}마디</em></span><span class="rec-text">${esc(talkName(x))}</span></a>` }));
-  const rows = [...state.thoughts.slice(-40).map(t => row('thought', t.id, '', `생각 · ${dayShort(t.createdAt)}`, t.text, '', t.createdAt)),
-    ...state.answers.slice(-20).map(a => row('answer', a.id, '', `${name}의 물음`, a.prompt, a.text, a.createdAt, 'q')), ...free];
-  return `<aside class="desk-recs" aria-label="생각"><div class="recs-head plain"><b>생각</b><a class="text-link" href="#thoughts">생각 탭 ›</a></div>
-    <div class="recs-list"><button class="rec-row whole" data-action="talk-free"><span class="rec-kind">새 이야기</span><span class="rec-text">＋ 주제 없이 이야기하기</span></button>${list(rows)}</div></aside>`;
+  const recent = id => Math.max(0, ...state.chats.filter(x => x.messages.length && laneOf(x) === id).map(lastAt));
+  const books = [...state.books].sort((a, b) => recent(b.id) - recent(a.id) || (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0));
+  return `<aside class="desk-side" aria-label="기록과 책">
+    <div class="side-top"><a class="side-back talk-back" href="${home.href}" aria-label="돌아가기" title="돌아가기">←</a><div class="side-title">${head}</div></div>
+    <nav class="recs-list" aria-label="기록">${body}</nav>
+    <div class="side-books" aria-label="책 고르기">${books.map(b => `<button class="rail-book ${b.id === lane ? 'on' : ''}" data-action="desk-book" data-id="${esc(b.id)}" title="${esc(b.title)}" aria-label="『${esc(b.title)}』 이야기" ${b.id === lane ? 'aria-current="true"' : ''}>${cover(b)}</button>`).join('')}<button class="rail-book rail-thought ${lane === 'thought' ? 'on' : ''}" data-action="desk-thoughts" title="생각" aria-label="생각 이야기" ${lane === 'thought' ? 'aria-current="true"' : ''}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 15.5c-1.9-.4-3-2-2.7-3.8.3-1.6 1.7-2.7 3.3-2.6.6-2.5 3-4.1 5.6-3.6 1.4.3 2.6 1.1 3.3 2.3 2.4-.4 4.6 1.3 4.9 3.7.3 2.4-1.5 4.4-3.9 4.5H5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg></button></div>
+  </aside>`;
 }
 async function deleteMore(id) {
   const all = s => [...s.thoughts, ...s.answers, ...s.books.flatMap(b => b.entries)];
