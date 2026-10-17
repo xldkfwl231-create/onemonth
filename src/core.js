@@ -4,7 +4,7 @@ export const now = () => new Date().toISOString();
 export const emptyProfile = () => ({ catName: '', tone: 'we', aiConsentAt: '' });
 // AI 사용량 — 요청 종류별 호출 수와 토큰
 export const emptyUsage = () => ({ since: '', calls: 0, input: 0, output: 0, byKind: {} });
-export const emptyState = () => ({ version: VERSION, profile: emptyProfile(), books: [], thoughts: [], answers: [], moments: [], readings: {}, insights: null, chats: [], usage: emptyUsage(), extraScales: [] });
+export const emptyState = () => ({ version: VERSION, profile: emptyProfile(), books: [], thoughts: [], answers: [], moments: [], readings: {}, titles: {}, insights: null, chats: [], usage: emptyUsage(), extraScales: [] });
 const object = v => v && typeof v === 'object' && !Array.isArray(v);
 function text(v, label, max = 100000, optional = false) {
   if (v == null && optional) return '';
@@ -73,6 +73,9 @@ export function normalize(input) {
   // 슬라임의 질문에 한 답 — 생각(스스로 떠오른 것)과는 다른 갈래
   const answers = !v3 ? [] : list(p.answers, '답', true).map(a => { row(a); return { id: id(a.id), createdAt: text(a.createdAt, '날짜', 100, true), prompt: text(a.prompt, '질문', 500, true), text: text(a.text, '답'), more: more(a.more) }; });
   const readings = v3 && object(p.readings) ? structuredClone(p.readings) : {};
+  // 문장 제목 — 슬라임이 책 문장마다 붙인 짧은 제목. h는 제목을 붙일 때의 문장 (문장을 고치면 다시 붙임)
+  const titles = {};
+  if (v3 && object(p.titles)) for (const [k, v] of Object.entries(p.titles).slice(0, 50000)) if (k.length <= 100 && object(v) && typeof v.t === 'string') titles[k] = { t: v.t.slice(0, 40), h: typeof v.h === 'string' ? v.h.slice(0, 40) : '' };
   // 슬라임의 하루 말 — AI가 만든 '그땐/지금은' 몇 줄과 오늘의 질문. 형식이 어긋나면 버립니다(다시 만들면 됨).
   const ins = v3 && object(p.insights) ? p.insights : null;
   const insights = ins && typeof ins.date === 'string' && Array.isArray(ins.lines) && typeof ins.question === 'string'
@@ -90,7 +93,7 @@ export function normalize(input) {
   const num = v => Number.isFinite(v) && v >= 0 ? Math.round(v) : 0;
   const u = v3 && object(p.usage) ? p.usage : {}, usage = { since: typeof u.since === 'string' ? u.since.slice(0, 40) : '', calls: num(u.calls), input: num(u.input), output: num(u.output), byKind: {} };
   if (object(u.byKind)) for (const [k, v] of Object.entries(u.byKind).slice(0, 10)) if (object(v)) usage.byKind[k.slice(0, 20)] = { calls: num(v.calls), input: num(v.input), output: num(v.output) };
-  return { version: VERSION, profile, books, thoughts, answers, moments, readings, insights, chats, usage, extraScales };
+  return { version: VERSION, profile, books, thoughts, answers, moments, readings, titles, insights, chats, usage, extraScales };
 }
 export function backup(state) { return JSON.stringify({ format: 'reading-notebook', exportedAt: now(), data: normalize(state) }, null, 2); }
 export function stats(s) { return { books: s.books.length, entries: s.books.reduce((n, b) => n + b.entries.length, 0), questions: s.books.reduce((n, b) => n + b.questions.length, 0), thoughts: s.thoughts.length, answers: s.answers.length, chats: (s.chats || []).length, moments: s.moments.length }; }

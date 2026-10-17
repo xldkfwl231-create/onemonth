@@ -2,9 +2,9 @@ import { uid, now, emptyState, normalize, backup, stats, matchesBook, dateLabel,
 import { mountSlime } from './slime.js';
 import { mountBoard, BOARD_COLORS } from './board.js';
 import { openStore, load, commit, previous } from './storage.js';
-import { BOOK_SEARCH_ENDPOINT, AI_ENDPOINT, AI_SUMMARY_ENDPOINT, AI_CHAT_ENDPOINT } from './config.js';
+import { BOOK_SEARCH_ENDPOINT, AI_ENDPOINT, AI_SUMMARY_ENDPOINT, AI_CHAT_ENDPOINT, AI_TITLES_ENDPOINT } from './config.js';
 
-const BUILD = '1017g';   // 폰에서 어떤 판을 보고 있는지 확인용
+const BUILD = '1017h';   // 폰에서 어떤 판을 보고 있는지 확인용
 const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 // 이름 뒤 조사 — 받침이 있으면 이/과, 없으면 가/와 (뚱이가, 말랑이)
@@ -132,7 +132,7 @@ function maybeSay(pokes) {
 }
 // 슬라임이 먹은 기록 — 생각, 책 문장, 슬라임에게 한 답. 오래된 것부터.
 // ── AI 사용량 ── 요청마다 아래에 잠깐 보여 주고, '나'에 모아 둡니다. 값은 Claude Haiku 5.5 기준 대략치.
-const USAGE_LABEL = { tags: '주제어 붙이기', chat: '이야기', summary: '책 정리', reflect: '오늘의 말(예전)' };
+const USAGE_LABEL = { tags: '주제어 붙이기', titles: '문장 제목', chat: '이야기', summary: '책 정리', reflect: '오늘의 말(예전)' };
 const PRICE = { input: 0.10 / 1e6, output: 0.50 / 1e6 };
 const dollars = u => (u.input * PRICE.input + u.output * PRICE.output);
 const WON_PER_USD = 1400;   // 대략 환율 — 정확한 값이 필요하면 여기만 고치면 됩니다
@@ -192,6 +192,29 @@ async function readRecords() {
     if (tag && route().page === 'home') { lastFed = ''; setTimeout(() => showSay(`음… #${tag} 맛이 나.`), 1200); }
   } catch { readBackoff = Date.now() + 5 * 60e3; }
   finally { reading = false; }
+}
+// 문장 제목 — 이야기 목록에서 알아보기 쉽게, 책에서 옮긴 문장마다 슬라임이 짧은 제목을 붙여 둡니다.
+// 문장을 고치면 다시 붙입니다. 제목을 못 받은 문장도 빈 제목으로 적어 두어 같은 문장을 되풀이해 보내지 않습니다.
+let titling = false, titleBackoff = 0;
+async function titleEntries(book) {
+  if (titling || !ready || busy || !state.profile.aiConsentAt || !AI_TITLES_ENDPOINT || !navigator.onLine || Date.now() < titleBackoff) return;
+  const todo = book.entries.filter(e => state.titles[e.id]?.h !== textHash(e.text)).slice(0, 30);
+  if (!todo.length) return;
+  titling = true;
+  try {
+    const res = await fetch(AI_TITLES_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ book: book.title, items: todo.map(e => ({ id: e.id, text: e.text })) }), signal: AbortSignal.timeout(30000) });
+    if (!res.ok) throw new Error(String(res.status));
+    const body = await res.json(); if (!Array.isArray(body?.items)) throw new Error('bad reply');
+    const got = new Map(body.items.map(x => [x.id, x.title]));
+    titling = false;
+    await change(s => {
+      const live = new Set(s.books.flatMap(b => b.entries.map(e => e.id)));
+      for (const id of Object.keys(s.titles)) if (!live.has(id)) delete s.titles[id];   // 지운 문장의 제목도 정리
+      for (const e of todo) s.titles[e.id] = { t: typeof got.get(e.id) === 'string' ? got.get(e.id).slice(0, 24) : '', h: textHash(e.text) };
+      addUsage(s, 'titles', body.usage);
+    }, '');
+  } catch { titleBackoff = Date.now() + 10 * 60e3; }
+  finally { titling = false; }
 }
 // 요즘(60일) 가장 많은 주제가 슬라임 겉색에 스밉니다
 function slimeLook() {
@@ -736,6 +759,7 @@ function renderTalk(id) {
     </section>
     <aside class="talk-ctx" aria-label="이야기의 배경"><button class="quiet ctx-close" data-action="talk-ctx">닫기 ✕</button><div class="ctx-more">${talkContextHtml(c)}</div></aside>
   </div>`;
+  if (wide && laneOf(c) !== 'thought' && talkSubject(c).book) { const b = talkSubject(c).book; setTimeout(() => titleEntries(b), 800); }   // 왼쪽 목록의 문장 제목
   $$('.talk-back').forEach(a => { a.onclick = () => { if (home.tab) entryTab = home.tab; if (home.filter) talkFilter = home.filter; focusRec = c.topic.kind === 'book' || c.topic.kind === 'free' ? '' : c.topic.ref; }; });
   const recs = $('.recs-list'), picked = $('.recs-list .on');   // 고른 기록이 목록에서 보이게 (화면 전체는 움직이지 않게)
   if (recs && picked && (picked.offsetTop < recs.scrollTop || picked.offsetTop + picked.offsetHeight > recs.scrollTop + recs.clientHeight)) recs.scrollTop = picked.offsetTop - recs.clientHeight / 3;
@@ -846,16 +870,18 @@ const laneOf = c => LANE[c.topic.kind] === 'book' ? (c.topic.kind === 'book' ? c
 // 왼쪽 칸 (보통의 대화 앱처럼): 위에 이 책의 기록을 이야기 목록으로, 맨 아래에 책 표지. 하나를 고르면 오른쪽에서 그 기록으로 이야기합니다
 function deskSideHtml(c, home) {
   const { book } = talkSubject(c), lane = laneOf(c), name = state.profile.catName || '슬라임';
-  const row = (kind, ref, bookId, label, text, at, cls = '') => {
+  // no: 책 안에서의 번호(문장 1, 2… · 질문 Q1, Q2…) — 목록이 최근 순으로 바뀌어도 같은 기록은 같은 번호. full: 눌러 보기 전 전체 글(풍선 도움말)
+  const row = (kind, ref, bookId, label, text, at, cls = '', no = '', full = '') => {
     const t = talkOf(kind, ref), n = t?.messages.length || 0, cur = c.topic.kind === kind && c.topic.ref === ref;
-    return { at: Math.max(Date.parse(at) || 0, n ? lastAt(t) : 0), html: `<button class="rec-row ${cls} ${n ? 'talked' : ''} ${cur ? 'on' : ''}" data-action="talk-${kind}" data-id="${esc(ref)}"${bookId ? ` data-book="${esc(bookId)}"` : ''}${cur ? ' aria-current="true"' : ''}><span class="rec-text">${esc(text)}</span><span class="rec-kind">${esc(label)}${n ? `<em>${n}마디</em>` : ''}</span></button>` };
+    return { at: Math.max(Date.parse(at) || 0, n ? lastAt(t) : 0), html: `<button class="rec-row ${cls} ${no ? 'numbered' : ''} ${n ? 'talked' : ''} ${cur ? 'on' : ''}" data-action="talk-${kind}" data-id="${esc(ref)}"${bookId ? ` data-book="${esc(bookId)}"` : ''}${cur ? ' aria-current="true"' : ''}${full ? ` title="${esc(full)}"` : ''}><span class="rec-line">${no ? `<b class="rec-no">${esc(no)}</b>` : ''}<span class="rec-text">${esc(text)}</span></span><span class="rec-kind">${esc(label)}${n ? `<em>${n}마디</em>` : ''}</span></button>` };
   };
   const list = rows => rows.sort((a, b) => b.at - a.at).map(r => r.html).join('');
   let head, body;
   if (lane !== 'thought' && book) {
     head = `<b>${esc(book.title)}</b><a class="text-link" href="#book/${esc(book.id)}">책 열기 ›</a>`;
-    const rows = [...book.entries.map(e => row('entry', e.id, book.id, e.page ? `문장 · p. ${e.page}` : '문장', e.note ? `${e.text} — ${e.note}` : e.text, e.createdAt)),
-      ...book.questions.map(q => row('question', q.id, book.id, q.answer ? '질문 · 답 있음' : '질문', q.text, q.createdAt, 'q'))];
+    // 문장은 슬라임이 붙인 짧은 제목으로 (아직 없으면 앞부분), 질문은 내가 쓴 그대로
+    const rows = [...book.entries.map((e, i) => row('entry', e.id, book.id, [e.page ? `p. ${e.page}` : '', e.note ? '메모 있음' : ''].filter(Boolean).join(' · ') || '문장', state.titles[e.id]?.t || cutN(e.text, 24), e.createdAt, '', String(i + 1), e.text)),
+      ...book.questions.map((q, i) => row('question', q.id, book.id, q.answer ? '질문 · 답 있음' : '질문', q.text, q.createdAt, 'q', `Q${i + 1}`, q.text))];
     body = row('book', book.id, '', `문장 ${book.entries.length} · 질문 ${book.questions.length}`, '이 책 전체로 이야기', '', 'whole').html + (list(rows) || '<p class="hint">책 화면에서 문장이나 질문을 남기면 여기 쌓입니다.</p>');
   } else {
     head = `<b>생각</b><a class="text-link" href="#thoughts">생각 탭 ›</a>`;

@@ -5,3 +5,5 @@ export const BOOK_SEARCH_ENDPOINT = 'https://book-search.dmsxor111.workers.dev/'
 export const AI_ENDPOINT = new URL('ai/tags', BOOK_SEARCH_ENDPOINT).href;
 export const AI_SUMMARY_ENDPOINT = new URL('ai/summary', BOOK_SEARCH_ENDPOINT).href;
 export const AI_CHAT_ENDPOINT = new URL('ai/chat', BOOK_SEARCH_ENDPOINT).href;
+// 이야기 목록의 문장 제목
+export const AI_TITLES_ENDPOINT = new URL('ai/titles', BOOK_SEARCH_ENDPOINT).href;

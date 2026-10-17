@@ -7,6 +7,7 @@
  *
  * GET  /?q=독서의 기술   → 책 검색. [{ title, authors, publisher, cover, isbn }, ...]
  * POST /ai/tags          → 기록마다 주제어 1~3개. { items: [{ id, text }], known: [주제어] } → { items: [{ id, tags }] }
+ * POST /ai/titles        → 책 문장마다 짧은 제목. { book, items: [{ id, text }] } → { items: [{ id, title }] }
  * POST /ai/chat          → 슬라임과 이야기(토론). { name, tone, topic, memory: [{ date, kind, text }], messages: [{ role, text }] } → { reply, next: [이어서 꺼낼 말] }
  *                          memory = 이 사람이 앱에 남긴 것들 — 슬라임은 이걸 기억으로 삼아 이야기합니다
  * POST /ai/summary       → 책 한 권 정리. { name, tone, book, entries: [{ id, page, note, more, talk }], questions: [{ id, text, answer, history, talk }], talk }
@@ -56,6 +57,12 @@ export default {
       if (!ALLOWED.includes(origin)) return json({ error: '허용되지 않은 주소입니다' }, 403);
       if (!env.ANTHROPIC_KEY) return json({ error: 'ANTHROPIC_KEY가 설정되지 않았습니다' }, 503);
       return chat(request, env, json);
+    }
+    if (path === '/ai/titles') {
+      if (request.method !== 'POST') return json({ error: 'POST만 받습니다' }, 405);
+      if (!ALLOWED.includes(origin)) return json({ error: '허용되지 않은 주소입니다' }, 403);
+      if (!env.ANTHROPIC_KEY) return json({ error: 'ANTHROPIC_KEY가 설정되지 않았습니다' }, 503);
+      return titles(request, env, json);
     }
     if (path === '/ai/summary') {
       if (request.method !== 'POST') return json({ error: 'POST만 받습니다' }, 405);
@@ -140,6 +147,40 @@ async function tags(request, env, json) {
     .filter(it => ids.has(it.id) && Array.isArray(it.tags))
     .map(it => ({ id: it.id, tags: [...new Set(it.tags.filter(t => typeof t === 'string').map(t => t.trim()).filter(t => t && t.length <= 12))].slice(0, 3) }));
   return json({ items: result, model: MODEL, usage: data.usage ? { input: data.usage.input_tokens, output: data.usage.output_tokens } : undefined });
+}
+
+// ── 문장 제목: 이야기 목록에서 알아보기 쉽게, 책에서 옮겨 적은 문장마다 짧은 제목 ─────────
+// 문장은 제목을 만드는 데만 쓰고 남기지 않습니다.
+const MAX_TITLE_TEXT = 600;
+async function titles(request, env, json) {
+  let body;
+  try { body = await request.json(); } catch { return json({ error: '형식이 올바르지 않습니다' }, 400); }
+  const items = Array.isArray(body?.items) ? body.items : null;
+  if (!items || !items.length || items.length > MAX_ITEMS) return json({ error: `문장은 1~${MAX_ITEMS}개씩 보내 주세요` }, 400);
+  const clean = [];
+  for (const it of items) {
+    if (typeof it?.id !== 'string' || it.id.length > 100 || typeof it?.text !== 'string' || !it.text.trim()) return json({ error: '문장 형식이 올바르지 않습니다' }, 400);
+    clean.push({ id: it.id, text: it.text.slice(0, MAX_TITLE_TEXT) });
+  }
+  const book = typeof body.book === 'string' ? body.book.slice(0, 200) : '';
+  const system = [
+    '당신은 한 사람이 책을 읽다 옮겨 적은 문장들에, 목록에서 한눈에 알아볼 수 있는 짧은 제목을 붙이는 도우미입니다.',
+    '규칙:',
+    '- 문장마다 제목 하나. 한국어로 6~16글자. 무엇에 대한 문장인지 핵심만 담은 명사구. 예: 고슴도치 찾기, 절벽 앞에서의 선택, 타고난 잠재력',
+    '- 문장을 앞에서부터 그대로 자르지 말고, 뜻을 줄여 쓰세요.',
+    '- 마침표, 따옴표, 이모지를 쓰지 마세요.',
+    '- 모든 문장의 id를 빠짐없이 그대로 돌려주세요.',
+  ].join('\n');
+  const user = JSON.stringify({ 책: book, 문장: clean });
+  const schema = { type: 'object', properties: { items: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, title: { type: 'string' } }, required: ['id', 'title'], additionalProperties: false } } }, required: ['items'], additionalProperties: false };
+  const r = await askClaude(env, { system, user, schema, effort: 'low', maxTokens: 3000 });
+  if (r.error) return json({ error: r.error[0] }, r.error[1]);
+  const ids = new Set(clean.map(x => x.id));
+  const out = (Array.isArray(r.out?.items) ? r.out.items : [])
+    .filter(it => ids.has(it?.id) && typeof it.title === 'string')
+    .map(it => ({ id: it.id, title: it.title.replace(/["'“”‘’.。]/g, '').trim().slice(0, 24) }))
+    .filter(it => it.title);
+  return json({ items: out, model: MODEL, usage: r.usage });
 }
 
 // ── AI 부르기 (공통) ───────────────────────────────────────────

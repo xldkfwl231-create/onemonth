@@ -120,3 +120,18 @@ test('chat: the last turn must be the person, and bad roles are refused', async 
   assert.equal((await call({ messages: [{ role: 'system', text: 'a' }] }, { path: '/ai/chat' })).status, 400);
   assert.equal((await call({ messages: [] }, { path: '/ai/chat' })).status, 400);
 });
+
+test('titles: one short title per sentence, unknown ids and punctuation dropped', async () => {
+  let body;
+  fakeAI({ stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify({ items: [{ id: 'a', title: ' “고슴도치 찾기.” ' }, { id: 'b', title: '' }, { id: 'zzz', title: '남의 것' }] }) }], usage: { input_tokens: 50, output_tokens: 9 } },
+    (url, init) => { body = JSON.parse(init.body); });
+  const res = await call({ book: '어떻게 살아낼 것인가', items: [{ id: 'a', text: '고슴도치를 찾는 과정' }, { id: 'b', text: '절벽' }] }, { path: '/ai/titles' });
+  assert.equal(res.status, 200);
+  const out = await res.json();
+  assert.deepEqual(out.items, [{ id: 'a', title: '고슴도치 찾기' }]);
+  assert.deepEqual(out.usage, { input: 50, output: 9 });
+  assert.equal(body.output_config.format.type, 'json_schema');
+  assert.match(body.messages[0].content, /어떻게 살아낼 것인가/);
+  assert.equal((await call({ items: [] }, { path: '/ai/titles' })).status, 400);
+  assert.equal((await call({ items: [{ id: 'a', text: 'x' }] }, { path: '/ai/titles', origin: 'https://evil.example' })).status, 403);
+});
