@@ -4,7 +4,7 @@ import { mountBoard, BOARD_COLORS } from './board.js';
 import { openStore, load, commit, previous } from './storage.js';
 import { BOOK_SEARCH_ENDPOINT, AI_ENDPOINT, AI_SUMMARY_ENDPOINT, AI_CHAT_ENDPOINT } from './config.js';
 
-const BUILD = '1017f';   // 폰에서 어떤 판을 보고 있는지 확인용
+const BUILD = '1017g';   // 폰에서 어떤 판을 보고 있는지 확인용
 const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 // 이름 뒤 조사 — 받침이 있으면 이/과, 없으면 가/와 (뚱이가, 말랑이)
@@ -624,14 +624,17 @@ function pcMode() {
   try { const v = localStorage.getItem('pc-mode'); if (v === '1' || v === '0') return v === '1'; return localStorage.getItem('enter-sends') === '1'; } catch { return false; }
 }
 // PC 모드면 폰에서도 이야기 화면만 노트북처럼 보입니다 — 배율은 index.html 머리에서 그리기 전에 정하므로,
-// 이야기 화면에 들고 날 때와 PC 모드를 켜고 끌 때는 새로 엽니다. 폰을 돌리면 너비(가로 1280 · 세로 820)만 바꿔 줍니다.
-const pcWidth = () => { const land = matchMedia('(orientation: landscape)').matches, real = land ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height); return pcMode() && real < 1100 && /^#talk\/./.test(location.hash) ? (land ? 1280 : 820) : 0; };
+// 이야기 화면에 들고 날 때와 PC 모드를 켜고 끌 때는 새로 엽니다. 폰을 돌리면 너비(가로 853 · 세로 760)만 바꿔 줍니다.
+// 가로 853은 노트북 너비(1280)를 1.5배 키운 것, 세로 760은 PC 배치가 나오는 가장 좁은 너비입니다.
+const pcWidth = () => { const land = matchMedia('(orientation: landscape)').matches, real = land ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height); return pcMode() && real < 1100 && /^#talk\/./.test(location.hash) ? (land ? 853 : 760) : 0; };
 // 지금 배율이 이 화면에 맞지 않으면 새로 엽니다. 그냥 새로고침하면 예전 배율이 되살아나서, 주소를 살짝 바꿔 엽니다 (열린 뒤 지움)
 function syncViewport() {
   const scaled = !$('meta[name=viewport]').content.startsWith('width=device-width');
   if (!!pcWidth() === scaled) return false;
   location.replace(`${location.pathname}?v=${Date.now()}${location.hash}`); return true;
 }
+// PC 모드에서는 블루투스 키보드를 쓰니 화면 자판을 띄우지 않습니다. 머리줄 '자판' 단추로 다시 띄울 수 있습니다 (이 기기에만 기억)
+const softKb = () => { try { return localStorage.getItem('soft-kb') === '1'; } catch { return false; } };
 function setPcMode(on) { try { localStorage.setItem('pc-mode', on ? '1' : '0'); localStorage.removeItem('enter-sends'); } catch {} syncViewport(); }
 matchMedia('(orientation: landscape)').addEventListener('change', () => { const w = pcWidth(); if (w) $('meta[name=viewport]').content = `width=${w}, viewport-fit=cover`; });
 // PC 모드면 Enter로 보냄. 아니면 넓은 화면·마우스일 때만
@@ -720,7 +723,7 @@ function renderTalk(id) {
   $('#main').innerHTML = `<div class="talk-desk ${wide ? 'desk' : ''}">
     ${wide ? deskSideHtml(c, home) : ''}
     <section class="talk" aria-label="이야기">
-      <div class="talk-head"><a class="back talk-back" href="${home.href}">${home.label}</a><h1 class="talk-title"><span class="status-tag">${talkKind[c.topic.kind]}</span><span class="title-text" title="눌러서 전체 보기">${esc(c.topic.kind === 'free' ? `${wa(name)} 이야기` : talkFull(c))}</span></h1><div class="talk-tools">${c.messages.some(m => m.role === 'user') ? `<button class="quiet" data-action="talk-keep">${keepLabel(c)}</button>` : ''}${c.messages.length ? `<button class="tool talk-del-tool" data-action="talk-delete" data-id="${esc(c.id)}" aria-label="이 이야기 지우기" title="이야기 지우기">${TRASH}</button>` : ''}<button class="tool ctx-toggle" data-action="talk-ctx" aria-pressed="${ctxOpen}" aria-label="이야기의 배경 보기" title="배경 보기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h11l3 3v13H5z M9 10h7 M9 14h7" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></button><button class="tool" data-action="pc-mode" aria-pressed="${pc}" aria-label="PC 모드 ${pc ? '끄기' : '켜기'}" title="PC 모드"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14v9H5z M3 18h18" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg><span>PC</span></button></div></div>
+      <div class="talk-head"><a class="back talk-back" href="${home.href}">${home.label}</a><h1 class="talk-title"><span class="status-tag">${talkKind[c.topic.kind]}</span><span class="title-text" title="눌러서 전체 보기">${esc(c.topic.kind === 'free' ? `${wa(name)} 이야기` : talkFull(c))}</span></h1><div class="talk-tools">${c.messages.some(m => m.role === 'user') ? `<button class="quiet" data-action="talk-keep">${keepLabel(c)}</button>` : ''}${c.messages.length ? `<button class="tool talk-del-tool" data-action="talk-delete" data-id="${esc(c.id)}" aria-label="이 이야기 지우기" title="이야기 지우기">${TRASH}</button>` : ''}<button class="tool ctx-toggle" data-action="talk-ctx" aria-pressed="${ctxOpen}" aria-label="이야기의 배경 보기" title="배경 보기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h11l3 3v13H5z M9 10h7 M9 14h7" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></button>${pc ? `<button class="tool" data-action="soft-kb" aria-pressed="${softKb()}" aria-label="화면 자판 ${softKb() ? '숨기기' : '띄우기'}" title="화면 자판"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h18v11H3z M7 11h0 M11 11h0 M15 11h0 M8 15h8" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg><span>자판</span></button>` : ''}<button class="tool" data-action="pc-mode" aria-pressed="${pc}" aria-label="PC 모드 ${pc ? '끄기' : '켜기'}" title="PC 모드"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14v9H5z M3 18h18" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg><span>PC</span></button></div></div>
       <div class="talk-log" id="talk-log">
         ${talkTopicCard(c)}
         ${c.messages.map(m => bubbleHtml(m.role, m.text)).join('')}
@@ -728,7 +731,7 @@ function renderTalk(id) {
         ${talkError && !pending ? `<div class="talk-error"><p>${esc(talkError)}</p><button data-action="talk-retry">다시 보내기</button></div>` : ''}
         ${!pending && !talkError && on && talkNext[id]?.length && c.messages.at(-1)?.role === 'assistant' ? `<div class="talk-next" aria-label="이어서 꺼낼 말">${talkNext[id].map(t => `<button class="chip" data-action="talk-next" data-text="${esc(t)}">${esc(t)}</button>`).join('')}</div>` : ''}
       </div>
-      ${on ? `<form class="talk-form" id="talk-form"><label class="visually-hidden" for="talk-input">${esc(name)}에게 할 말</label><textarea id="talk-input" rows="1" maxlength="1500" placeholder="${esc(name)}에게 말하기${enterSends ? ' · Enter 보내기, Shift+Enter 줄바꿈' : ''}">${esc(draft)}</textarea><button class="primary" type="submit" ${pending ? 'disabled' : ''} aria-label="보내기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12l15-7-5 15-2.5-6.5z" fill="currentColor"/></svg></button></form>`
+      ${on ? `<form class="talk-form" id="talk-form"><label class="visually-hidden" for="talk-input">${esc(name)}에게 할 말</label><textarea id="talk-input" rows="1" maxlength="1500"${pc && !softKb() ? ' inputmode="none"' : ''} placeholder="${esc(name)}에게 말하기${enterSends ? ' · Enter 보내기, Shift+Enter 줄바꿈' : ''}">${esc(draft)}</textarea><button class="primary" type="submit" ${pending ? 'disabled' : ''} aria-label="보내기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12l15-7-5 15-2.5-6.5z" fill="currentColor"/></svg></button></form>`
          : `<div class="talk-form off"><p>이야기하려면 '나'에서 <b>슬라임이 기록 읽기</b>를 켜 주세요.</p><a class="text-link" href="#me">켜러 가기 ›</a></div>`}
     </section>
     <aside class="talk-ctx" aria-label="이야기의 배경"><button class="quiet ctx-close" data-action="talk-ctx">닫기 ✕</button><div class="ctx-more">${talkContextHtml(c)}</div></aside>
@@ -946,7 +949,7 @@ function renderMe() {
       <p class="hint">켜면 내가 쓴 <b>생각, 메모와 덧붙인 말, 질문과 답, 이야기에서 한 말</b>을 AI(Anthropic Claude)에게 보내 주제어를 붙이고, 이야기와 책 정리 때 슬라임이 이걸 <b>기억</b>으로 씁니다. 책에서 옮겨 적은 문장은 내가 골라 이야기할 때만 보냅니다. 중계소는 글을 저장하지 않고, 결과는 이 기기에만 남습니다.</p>
       <div class="me-toggle"><button id="ai-toggle" class="${p.aiConsentAt ? '' : 'primary'}">${p.aiConsentAt ? '끄기' : '켜기'}</button><p class="hint" id="ai-status">${aiStatus()}</p></div>
     </section>
-    <section class="me-card"><h2>PC 모드</h2><p class="hint">켜면 <b>이야기 화면이 폰에서도 노트북처럼</b> 넓은 화면을 줄여서 보입니다(가로로 눕히면 더 넓게). 다른 화면은 그대로입니다. 이야기는 왼쪽에 기록 목록과 책, 오른쪽에 대화로 나오고, <b>Enter로 보내고 Shift+Enter로 줄을 바꿉니다.</b> 이야기 화면 오른쪽 위 <b>PC</b> 단추로도 켜고 끌 수 있습니다. 이 기기에만 적용됩니다.</p><div class="me-toggle"><button id="pc-toggle" class="${pcMode() ? '' : 'primary'}">${pcMode() ? 'PC 모드 끄기' : 'PC 모드 켜기'}</button></div></section>
+    <section class="me-card"><h2>PC 모드</h2><p class="hint">켜면 <b>이야기 화면이 폰에서도 노트북처럼</b> 넓은 화면을 줄여서 보입니다(가로로 눕히면 더 넓게). 다른 화면은 그대로입니다. 이야기는 왼쪽에 기록 목록과 책, 오른쪽에 대화로 나오고, <b>Enter로 보내고 Shift+Enter로 줄을 바꿉니다.</b> 블루투스 키보드를 쓰도록 화면 자판은 띄우지 않으며, 이야기 머리줄의 <b>자판</b> 단추로 다시 띄울 수 있습니다. 이야기 화면 오른쪽 위 <b>PC</b> 단추로도 켜고 끌 수 있습니다. 이 기기에만 적용됩니다.</p><div class="me-toggle"><button id="pc-toggle" class="${pcMode() ? '' : 'primary'}">${pcMode() ? 'PC 모드 끄기' : 'PC 모드 켜기'}</button></div></section>
     <section class="me-card"><h2>AI 사용량</h2>${usageBlock()}</section>
     <section class="me-card"><h2>보관</h2>
       <p class="hint">기록은 이 폰의 브라우저에만 있습니다. 가끔 파일로 내려받아 두세요. <b>${lastBackup() ? `마지막 백업: ${esc(dateLabel(lastBackup()))}` : '아직 백업한 적이 없습니다.'}</b></p>
@@ -1031,6 +1034,7 @@ document.addEventListener('click', e => {
     case 'talk-question': talkFocus = true; startTalk('question', id, book); break;
     case 'talk-quote': { if (ctxOpen) { ctxOpen = false; document.body.classList.remove('ctx-open'); $('[data-action=talk-ctx]')?.setAttribute('aria-pressed', 'false'); } const el = $('#talk-input'); if (el) { el.value = (el.value ? el.value.replace(/\s*$/, '\n') : '') + `“${btn.dataset.text}” `; el.dispatchEvent(new Event('input')); el.focus(); } break; }
     case 'talk-keep': talkKeep(route().id); break;
+    case 'soft-kb': { try { localStorage.setItem('soft-kb', softKb() ? '0' : '1'); } catch {} renderTalk(route().id); $('#talk-input')?.focus(); notice(softKb() ? '화면 자판을 띄웁니다.' : '화면 자판을 숨깁니다. 블루투스 키보드로 적으세요.'); break; }
     case 'talk-next': { const el = $('#talk-input'); if (el) { el.value = el.value.trim() ? el.value.replace(/\s*$/, ' ') + btn.dataset.text : btn.dataset.text; el.dispatchEvent(new Event('input')); el.focus(); el.setSelectionRange(el.value.length, el.value.length); } break; }   // 눌러도 바로 보내지 않고 입력칸에 — 고쳐서 보내도 됩니다
     case 'desk-book': case 'desk-thoughts': {   // 왼쪽 아래 책(또는 생각)을 고르면 그 갈래에서 마지막으로 이야기한 것을 엽니다
       const lane = action === 'desk-book' ? id : 'thought', last = state.chats.filter(x => x.messages.length && laneOf(x) === lane).sort((a, b) => lastAt(b) - lastAt(a))[0];
