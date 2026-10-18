@@ -8,7 +8,7 @@
  * GET  /?q=독서의 기술   → 책 검색. [{ title, authors, publisher, cover, isbn }, ...]
  * POST /ai/tags          → 기록마다 주제어 1~3개와 짧은 요약. { items: [{ id, text }], known: [주제어], fresh?, name?, tone? } → { items: [{ id, tags, gist }], bite: 방금 먹인 기록(fresh)에 슬라임이 하는 한마디 }
  * POST /ai/titles        → 책 문장마다 짧은 제목. { book, items: [{ id, text }] } → { items: [{ id, title }] }
- * POST /ai/chat          → 슬라임과 이야기(토론). { name, tone, topic, memory: [{ date, kind, text }], messages: [{ role, text }] } → { reply, next: [이어서 꺼낼 말] }
+ * POST /ai/chat          → 슬라임과 이야기(토론). { name, tone, topic, memory: [{ date, kind, text }], messages: [{ role, text }] } → { reply }
  *                          memory = 이 사람이 앱에 남긴 것들 — 슬라임은 이걸 기억으로 삼아 이야기합니다
  * POST /ai/summary       → 책 한 권 정리. { name, tone, book, entries: [{ id, page, note, more, talk }], questions: [{ id, text, answer, history, talk }], talk }
  *                          → { line, held: [{ id, why }], open: [{ id, why }], changed: [{ id, then, now }] }  (책에서 옮겨 적은 문장은 받지 않음)
@@ -321,10 +321,9 @@ async function chat(request, env, json) {
     '- "맞아", "좋은 생각이야", "그럴 수 있어", "충분히 이해해"처럼 빈 동의로 시작하지 마세요. 정말 동의하면 왜 동의하는지 이유를 대고, 그다음 한 걸음 더 나가세요.',
     '- 이 사람의 말을 그대로 되풀이하거나 다른 말로 바꿔 돌려주지 마세요.',
     '- 생각과 의견에는 솔직하게 반대해도 됩니다. 하지만 이 사람 자체를 평가하거나 진단하지는 마세요. ("너는 ~한 사람이야" 금지)',
-    '- 짧게. 2~5문장. 다정하지만 무르지 않은 반말.',
+    '- 짧게. 2~3문장, 문장마다 짧게. 다 합쳐 150자 안쪽. 보태는 것은 하나만. 다정하지만 무르지 않은 반말.',
     tone === 'we' ? '- 당신과 이 사람은 하나라서 이 사람을 "우리"라고 부르기도 합니다. 그래도 한 마음 안에 여러 목소리가 있듯, 당신은 우리 안의 다른 쪽 목소리입니다. 하나라는 이유로 동의하지 마세요.' : '- 이 사람을 "너"라고 부르세요.',
-    '- 질문하는 사람은 이 사람입니다. reply에서는 되묻지 말고 물음표로 끝내지 마세요. "궁금해", "어때?", "왜일까?"처럼 되묻는 말도 하지 마세요.',
-    '- 대신 next에 이 사람이 이어서 꺼낼 만한 말을 2~3개 적으세요. 이 사람의 목소리(나를 주어로 한 반말)로, 20자 안팎으로 짧게. 서로 다른 방향이어야 합니다. 예: 방금 말에 반박해 보기, 내 경험으로 구체화하기, 책이나 예전 기록과 견주기, 지금까지를 한 줄로 정리하기.',
+    '- 질문하는 사람은 이 사람입니다. 되묻지 말고 물음표로 끝내지 마세요. "궁금해", "어때?", "왜일까?"처럼 되묻는 말도 하지 마세요.',
     '- 이 사람이 한 말의 뜻을 정말 알 수 없을 때만 짧게 확인해도 됩니다.',
     '- 책에 대해 확실히 아는 내용은 관점으로 꺼내도 됩니다. 확실하지 않으면 아는 척하지 말고 그렇다고 말하세요.',
     '- 건강·법률·돈처럼 전문 판단이 필요한 이야기는 전문가에게 묻기를 권하세요.',
@@ -341,18 +340,15 @@ async function chat(request, env, json) {
       '- 당신은 이 기억을 모두 알고 있는 슬라임입니다. 지금 말과 어긋나는 예전 말이 있으면 그것부터 꺼내세요. 예: "10월 3일엔 아침 산책이 좋다고 했는데, 지금은 아침이 버겁다고 하네."',
       '- 지금 말과 같은 예전 말을 꺼내 맞다고 확인해 주는 데만 쓰지 마세요. 같은 말이 되풀이되고 있다면, 되풀이된다는 사실 자체를 짚으세요.',
       '- 기억에 없는 일을 지어내지 마세요. 날짜와 말은 적힌 그대로만 쓰세요.',
-      '- 기억을 늘어놓지 말고, 지금 말과 닿는 것 한두 개만.',
+      '- 기억을 늘어놓지 말고, 지금 말과 닿는 것 하나만. 날짜 하나와 짧은 인용(15자 안쪽)으로.',
       '- "기억이 안 난다"고 할 필요가 있으면 솔직하게 말하세요.',
     ] : []),
   ].join('\n');
-  // reply: 슬라임의 말 · next: 이 사람이 이어서 꺼낼 만한 말 (앱에서 단추로 보여 줍니다)
-  const schema = { type: 'object', properties: { reply: { type: 'string' }, next: { type: 'array', items: { type: 'string' } } }, required: ['reply', 'next'], additionalProperties: false };
-  const r = await askClaude(env, { system, messages: clean, schema, effort: 'medium', maxTokens: 3000 });
+  const r = await askClaude(env, { system, messages: clean, effort: 'medium', maxTokens: 3000 });
   if (r.error) return json({ error: r.error[0] }, r.error[1]);
-  const reply = (typeof r.out?.reply === 'string' ? r.out.reply : '').trim().slice(0, 1500);
+  const reply = (r.text || '').trim().slice(0, 1500);
   if (!reply) return json({ error: 'AI 답이 비어 있습니다' }, 502);
-  const next = [...new Set((Array.isArray(r.out.next) ? r.out.next : []).filter(x => typeof x === 'string').map(x => x.trim()).filter(x => x && x.length <= 60))].slice(0, 3);
-  return json({ reply, next, model: MODEL, usage: r.usage });
+  return json({ reply, model: MODEL, usage: r.usage });
 }
 
 // ── 책 검색 (카카오) ────────────────────────────────────────────

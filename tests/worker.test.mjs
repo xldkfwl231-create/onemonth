@@ -82,7 +82,7 @@ test('summary: refuses an empty book and unknown sites', async () => {
 
 test('chat: the slime gets my records as memory', async () => {
   let body;
-  fakeAI({ stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify({ reply: '출근길 얘기 기억나.', next: [] }) }], usage: { input_tokens: 10, output_tokens: 5 } }, (url, init) => { body = JSON.parse(init.body); });
+  fakeAI({ stop_reason: 'end_turn', content: [{ type: 'text', text: '출근길 얘기 기억나.' }], usage: { input_tokens: 10, output_tokens: 5 } }, (url, init) => { body = JSON.parse(init.body); });
   const memory = [{ date: '10월 3일', kind: '생각', text: '혼자 걷는 출근길이 좋았다' }, { kind: '자주 나온 주제어', text: '#혼자 3' }, { text: '' }, ...Array.from({ length: 70 }, (_, i) => ({ date: '', kind: '생각', text: '옛 생각 ' + i }))];
   const res = await call({ topic: { kind: 'free' }, memory, messages: [{ role: 'user', text: '요즘 어때?' }] }, { path: '/ai/chat' });
   assert.equal(res.status, 200);
@@ -97,7 +97,7 @@ test('chat: the slime gets my records as memory', async () => {
 
 test('chat: sends the conversation as turns, merges same-side lines, returns the reply', async () => {
   let body;
-  fakeAI({ stop_reason: 'end_turn', content: [{ type: 'thinking', thinking: '' }, { type: 'text', text: JSON.stringify({ reply: '  그 문장에서 "관찰"이 걸렸구나. 판단 없이 본다는 건 결론을 미루는 일이라 어려운 게 당연해.  ', next: [' 그래도 해 보고 싶어 ', '그래도 해 보고 싶어', '', 7, '내 경우엔 회의 때 그래', '책에선 어떻게 하라고 했더라', '넷째 말'] }) }], usage: { input_tokens: 400, output_tokens: 60 } },
+  fakeAI({ stop_reason: 'end_turn', content: [{ type: 'thinking', thinking: '' }, { type: 'text', text: '  그 문장에서 "관찰"이 걸렸구나. 판단 없이 본다는 건 결론을 미루는 일이라 어려운 게 당연해.  ' }], usage: { input_tokens: 400, output_tokens: 60 } },
     (url, init) => { body = JSON.parse(init.body); });
   const res = await call({ name: '말랑', tone: 'we', topic: { kind: 'book', title: '어떻게 살아낼 것인가', author: '짐 콜린스', notes: ['해 보자. 판단 없이.'] },
     messages: [{ role: 'assistant', text: '어떤 게 마음에 남았어?' }, { role: 'user', text: '관찰하라는 말' }, { role: 'user', text: '그게 어렵더라' }] }, { path: '/ai/chat' });
@@ -107,9 +107,9 @@ test('chat: sends the conversation as turns, merges same-side lines, returns the
   assert.deepEqual(out.usage, { input: 400, output: 60 });
   assert.equal(body.messages.length, 1);                       // 맨 앞 슬라임 말은 빼고, 이어진 사람 말은 하나로
   assert.equal(body.messages[0].content, '관찰하라는 말\n\n그게 어렵더라');
-  assert.deepEqual(out.next, ['그래도 해 보고 싶어', '내 경우엔 회의 때 그래', '책에선 어떻게 하라고 했더라']);   // 공백·중복·빈 말 정리, 셋까지
-  assert.equal(body.output_config.format.type, 'json_schema');
-  assert.deepEqual(body.output_config.format.schema.required, ['reply', 'next']);
+  assert.ok(!('next' in out));   // 이어서 꺼낼 말 단추는 없앰
+  assert.ok(!body.output_config.format);
+  assert.match(body.system, /150자 안쪽/);
   assert.match(body.system, /어떻게 살아낼 것인가/);
   assert.match(body.system, /빈 동의로 시작하지 마세요/);
   assert.match(body.system, /다른 쪽 목소리/);   // '우리' 말투여도 동의하지 않게
