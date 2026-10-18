@@ -4,7 +4,7 @@ import { mountBoard, BOARD_COLORS } from './board.js';
 import { openStore, load, commit, previous } from './storage.js';
 import { BOOK_SEARCH_ENDPOINT, AI_ENDPOINT, AI_SUMMARY_ENDPOINT, AI_CHAT_ENDPOINT, AI_TITLES_ENDPOINT } from './config.js';
 
-const BUILD = '1018a';   // 폰에서 어떤 판을 보고 있는지 확인용
+const BUILD = '1018b';   // 폰에서 어떤 판을 보고 있는지 확인용
 const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 // 이름 뒤 조사 — 받침이 있으면 이/과, 없으면 가/와 (뚱이가, 말랑이)
@@ -760,7 +760,6 @@ function renderTalk(id) {
         ${c.messages.map(m => bubbleHtml(m.role, m.text)).join('')}
         ${pending ? `<div class="talk-msg slime typing">${face}<p><i></i><i></i><i></i></p></div>` : ''}
         ${talkError && !pending ? `<div class="talk-error"><p>${esc(talkError)}</p><button data-action="talk-retry">다시 보내기</button></div>` : ''}
-        ${!pending && !talkError && on && talkNext[id]?.length && c.messages.at(-1)?.role === 'assistant' ? `<div class="talk-next" aria-label="이어서 꺼낼 말">${talkNext[id].map(t => `<button class="chip" data-action="talk-next" data-text="${esc(t)}">${esc(t)}</button>`).join('')}</div>` : ''}
       </div>
       ${on ? `<form class="talk-form" id="talk-form"><label class="visually-hidden" for="talk-input">${esc(name)}에게 할 말</label><textarea id="talk-input" rows="1" maxlength="1500"${pc && !softKb() ? ' inputmode="none"' : ''} placeholder="${esc(name)}에게 말하기${enterSends ? ' · Enter 보내기, Shift+Enter 줄바꿈' : ''}">${esc(draft)}</textarea><button class="primary" type="submit" ${pending ? 'disabled' : ''} aria-label="보내기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12l15-7-5 15-2.5-6.5z" fill="currentColor"/></svg></button></form>`
          : `<div class="talk-form off"><p>이야기하려면 '나'에서 <b>슬라임이 기록 읽기</b>를 켜 주세요.</p><a class="text-link" href="#me">켜러 가기 ›</a></div>`}
@@ -772,7 +771,13 @@ function renderTalk(id) {
   const recs = $('.recs-list'), picked = $('.recs-list .on');   // 고른 기록이 목록에서 보이게 (화면 전체는 움직이지 않게)
   if (recs && picked && (picked.offsetTop < recs.scrollTop || picked.offsetTop + picked.offsetHeight > recs.scrollTop + recs.clientHeight)) recs.scrollTop = picked.offsetTop - recs.clientHeight / 3;
   $('.title-text').onclick = e => e.currentTarget.classList.toggle('open');   // 긴 문장은 두 줄까지, 누르면 전체
-  const log = $('#talk-log'); if (log) { log.scrollTop = log.scrollHeight; log.lastElementChild?.scrollIntoView({ block: 'end' }); }
+  // 보통은 맨 아래로. 슬라임이 방금 답했으면 그 답의 첫 줄이 위에 오게 (긴 답의 앞부분이 잘리지 않게, 내 말 끝도 조금 보이게)
+  const log = $('#talk-log');
+  if (log) {
+    const bottom = log.scrollHeight - log.clientHeight, reply = talkReplied === id && [...log.querySelectorAll('.talk-msg.slime')].at(-1);
+    log.scrollTop = reply ? Math.min(bottom, reply.getBoundingClientRect().top - log.getBoundingClientRect().top + log.scrollTop - 48) : bottom;
+    if (!reply) log.lastElementChild?.scrollIntoView({ block: 'end' });
+  }
   const input = $('#talk-input');
   if (input) {
     const grow = () => { input.style.height = 'auto'; input.style.height = Math.min(wide ? 220 : 140, input.scrollHeight) + 'px'; };
@@ -813,11 +818,10 @@ function memoryFor(c) {
   const tags = tagCounts().slice(0, 12).map(([t, n]) => `#${t} ${n}번`).join(', ');
   return [...(tags ? [{ date: '', kind: '자주 나온 주제어', text: tags }] : []), ...[...related, ...rest].sort((a, b) => a.at - b.at).map(x => ({ date: day(x.at), kind: x.kind, text: x.text }))];
 }
-// 슬라임이 답 아래에 건네는 '이어서 꺼낼 말' — 이야기마다 마지막 답의 것만, 이 화면에서만 기억합니다
-const talkNext = {};
+let talkReplied = '';   // 방금 슬라임이 답한 이야기 — 다음 말을 보낼 때까지, 다시 그려도 그 답의 첫 줄이 보이게
 async function sendTalk(id, text) {
   if (talkPending || busy) return;
-  talkError = ''; delete talkNext[id];
+  talkError = ''; talkReplied = '';
   if (text && !await change(s => { s.chats.find(x => x.id === id).messages.push({ role: 'user', text, at: now() }); }, '')) return;
   if ($('#talk-input')) $('#talk-input').value = '';
   talkPending = id; if (route().page === 'talk') renderTalk(id);
@@ -830,7 +834,7 @@ async function sendTalk(id, text) {
     const out = await res.json().catch(() => ({}));
     if (!res.ok || typeof out.reply !== 'string') throw new Error(out.error || `연결 실패 (${res.status})`);
     talkPending = '';
-    talkNext[id] = Array.isArray(out.next) ? out.next.filter(x => typeof x === 'string' && x.trim()).slice(0, 3) : [];
+    talkReplied = id;
     await change(s => {
       const chat = s.chats.find(x => x.id === id); if (!chat) return;
       chat.messages.push({ role: 'assistant', text: out.reply, at: now() });
@@ -1069,7 +1073,6 @@ document.addEventListener('click', e => {
     case 'talk-quote': { if (ctxOpen) { ctxOpen = false; document.body.classList.remove('ctx-open'); $('[data-action=talk-ctx]')?.setAttribute('aria-pressed', 'false'); } const el = $('#talk-input'); if (el) { el.value = (el.value ? el.value.replace(/\s*$/, '\n') : '') + `“${btn.dataset.text}” `; el.dispatchEvent(new Event('input')); el.focus(); } break; }
     case 'talk-keep': talkKeep(route().id); break;
     case 'soft-kb': { try { localStorage.setItem('soft-kb', softKb() ? '0' : '1'); } catch {} renderTalk(route().id); $('#talk-input')?.focus(); notice(softKb() ? '화면 자판을 띄웁니다.' : '화면 자판을 숨깁니다. 블루투스 키보드로 적으세요.'); break; }
-    case 'talk-next': { const el = $('#talk-input'); if (el) { el.value = el.value.trim() ? el.value.replace(/\s*$/, ' ') + btn.dataset.text : btn.dataset.text; el.dispatchEvent(new Event('input')); el.focus(); el.setSelectionRange(el.value.length, el.value.length); } break; }   // 눌러도 바로 보내지 않고 입력칸에 — 고쳐서 보내도 됩니다
     case 'desk-book': case 'desk-thoughts': {   // 왼쪽 아래 책(또는 생각)을 고르면 그 갈래에서 마지막으로 이야기한 것을 엽니다
       const lane = action === 'desk-book' ? id : 'thought', last = state.chats.filter(x => x.messages.length && laneOf(x) === lane).sort((a, b) => lastAt(b) - lastAt(a))[0];
       talkFocus = true;
