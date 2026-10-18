@@ -762,3 +762,7 @@ button.sum-change:active{transform:none}
 .talk-next .chip:hover{border-style:solid;border-color:var(--mint)}
 .talk-next .chip:active{transform:none;background:var(--mint-pale)}
 .desk .talk-next .chip{font-size:12.5px;padding:4px 11px}
+
+/* ── 슬라임 말풍선: 기록을 꺼낼 때는 눌러서 그 기록으로 ── */
+.slime-say.go{pointer-events:auto;cursor:pointer}
+.slime-say.go:active{transform:translate(-50%,2px)}

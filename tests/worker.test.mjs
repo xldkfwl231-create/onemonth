@@ -21,7 +21,8 @@ test('tags: sends the key only to Anthropic and returns cleaned tags', async () 
   const res = await call({ items: [{ id: 'a', text: '회의만 끝나면 기운이 빠진다' }], known: ['독서'] });
   assert.equal(res.status, 200);
   const out = await res.json();
-  assert.deepEqual(out.items, [{ id: 'a', tags: ['회의', '기운', '일'] }]);   // 중복·공백·긴 말 정리, 모르는 id 버림
+  assert.deepEqual(out.items, [{ id: 'a', tags: ['회의', '기운', '일'], gist: '' }]);   // 중복·공백·긴 말 정리, 모르는 id 버림, 요약 없으면 빈 칸
+  assert.equal(out.bite, '');   // 방금 먹인 기록(fresh)이 없으면 한마디도 없음
   assert.equal(sent.url, 'https://api.anthropic.com/v1/messages');
   assert.equal(sent.init.headers['x-api-key'], 'test-key');
   const body = JSON.parse(sent.init.body);
@@ -134,4 +135,20 @@ test('titles: one short title per sentence, unknown ids and punctuation dropped'
   assert.match(body.messages[0].content, /어떻게 살아낼 것인가/);
   assert.equal((await call({ items: [] }, { path: '/ai/titles' })).status, 400);
   assert.equal((await call({ items: [{ id: 'a', text: 'x' }] }, { path: '/ai/titles', origin: 'https://evil.example' })).status, 403);
+});
+
+test('tags: short gist per record, and a bite for the record just fed', async () => {
+  let body;
+  fakeAI({ stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify({ items: [{ id: 'a', tags: ['출근'], gist: ' “혼자 걷는 출근길.” ' }, { id: 'b', tags: [], gist: '회의 뒤 피곤' }], bite: ' 출근길 얘기가 또 나왔네. ' }) }], usage: { input_tokens: 60, output_tokens: 30 } },
+    (url, init) => { body = JSON.parse(init.body); });
+  const res = await call({ items: [{ id: 'a', text: '혼자 걷는 출근길이 좋았다' }, { id: 'b', text: '회의 끝나면 피곤' }], fresh: 'a', name: '뚱이', tone: 'you' });
+  const out = await res.json();
+  assert.deepEqual(out.items.map(x => x.gist), ['혼자 걷는 출근길', '회의 뒤 피곤']);
+  assert.equal(out.bite, '출근길 얘기가 또 나왔네.');
+  assert.match(body.system, /id a/);
+  assert.match(body.system, /뚱이/);
+  assert.deepEqual(body.output_config.format.schema.required, ['items', 'bite']);
+  // 모르는 id를 fresh로 보내면 한마디를 청하지 않고, 와도 버립니다
+  await call({ items: [{ id: 'a', text: 'x' }], fresh: 'zzz' });
+  assert.match(body.system, /bite는 빈 문자열/);
 });
