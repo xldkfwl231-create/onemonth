@@ -4,7 +4,7 @@ import { mountBoard, BOARD_COLORS } from './board.js';
 import { openStore, load, commit, previous } from './storage.js';
 import { BOOK_SEARCH_ENDPOINT, AI_ENDPOINT, AI_SUMMARY_ENDPOINT, AI_CHAT_ENDPOINT, AI_TITLES_ENDPOINT } from './config.js';
 
-const BUILD = '1017h';   // 폰에서 어떤 판을 보고 있는지 확인용
+const BUILD = '1018a';   // 폰에서 어떤 판을 보고 있는지 확인용
 const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 // 이름 뒤 조사 — 받침이 있으면 이/과, 없으면 가/와 (뚱이가, 말랑이)
@@ -86,7 +86,7 @@ function spines(books) {
 // ── 슬라임 · 순간 ──────────────────────────────────────────
 const say = pair => pair[state.profile.tone === 'you' ? 1 : 0];
 const todayKey = () => dayOf(new Date());
-let slime = null, saidToday = new Set(), lastFed = '';   // lastFed: 방금 먹인 생각 — 주제어가 붙으면 맛을 말해 줍니다
+let slime = null, lastFed = '';   // lastFed: 방금 먹인 생각 — 주제어가 붙으면 맛을 말해 줍니다
 // 이름이 없으면 이름을 묻고, 처음 한 번은 다루는 법을 알려 줍니다
 const guideSeen = () => { try { return localStorage.getItem('guide-seen') === '1'; } catch { return true; } };
 const nameBubble = () => state.profile.catName ? (guideSeen() ? '' : `<div class="bubble"><p class="bubble-text">나는 꾹 누르면 터지고, 흔들면 날아가. 다루는 법을 알려 줄까?</p><div class="bubble-actions"><button class="primary" data-action="guide-open">다루는 법 보기</button><button class="quiet" data-action="guide-ok">알겠어</button></div></div>`) : `<div class="bubble"><p class="bubble-text">안녕. 나는 아직 이름이 없는 슬라임이야. 이름을 지어 줄래?</p><div class="bubble-actions"><button class="primary" data-action="profile">이름 지어 주기</button></div></div>`;
@@ -107,28 +107,30 @@ function wireFeed() {
     if (!await change(s => { s.thoughts.push({ id, createdAt: now(), text, more: [] }); }, '')) return;
     input.value = ''; feedDraft.set(''); grow(); input.blur();   // 키보드를 내려 슬라임이 먹는 걸 보이게
     lastFed = id;
-    showSay(say(['냠. 잘 먹었어. 생각 탭에 넣어 둘게.', '냠. 잘 먹었어. 생각 탭에 넣어 둘게.']));
+    showSay(state.profile.aiConsentAt && navigator.onLine ? '냠. 꼭꼭 씹어 볼게…' : '냠. 잘 먹었어. 생각 탭에 넣어 둘게.');   // 기록 읽기가 켜져 있으면 곧 한마디 (readRecords)
   };
 }
-// 슬라임이 가지고 놀 때 꺼내는 말. 지금은 지난 기록을 그대로 인용하고, 요약이 생기면 그걸로 바뀝니다.
-function sayLines() {
-  const quote = (createdAt, text) => `${dateLabel(createdAt)}에 이렇게 적었어. “${text.length > 70 ? text.slice(0, 70) + '…' : text}”`;
-  return [
-    ...state.thoughts.map(t => quote(t.createdAt, t.text)),
-    ...state.answers.map(a => `${dateLabel(a.createdAt)}에 내가 “${a.prompt.length > 30 ? a.prompt.slice(0, 30) + '…' : a.prompt}” 하고 물었더니 이렇게 답했어. “${a.text.length > 60 ? a.text.slice(0, 60) + '…' : a.text}”`),
-    ...state.moments.map(m => quote(m.createdAt, m.text)),
-    ...state.books.flatMap(b => b.entries.filter(e => e.note).map(e => `『${b.title}』을 읽다가 ${dateLabel(e.createdAt)}에 남긴 생각. “${e.note.length > 60 ? e.note.slice(0, 60) + '…' : e.note}”`))
-  ];
+// 슬라임이 가지고 놀 때 꺼내는 말 — 내가 남긴 기록(생각 · 물음에 한 답 · 책 문장에 단 메모)을 최근 것부터 하나씩,
+// 날짜와 짧은 요약 한 줄로. 요약은 슬라임이 기록을 읽을 때 붙여 둔 것(없으면 앞부분). 말풍선을 누르면 그 기록으로 갑니다.
+const mdLabel = v => isIso(v) ? new Date(v).toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' }) : (v || '');
+function sayItems() {
+  const out = [], add = (id, at, text, go) => { if (text && text.trim()) out.push({ id, at: Date.parse(at) || 0, date: at, text, go }); };
+  for (const t of state.thoughts) add(t.id, t.createdAt, t.text, { kind: 'thought' });
+  for (const a of state.answers) add(a.id, a.createdAt, a.text, { kind: 'answer' });
+  for (const b of state.books) for (const e of b.entries) add(e.id, e.createdAt, e.note, { kind: 'entry', book: b.id });
+  return out.sort((x, y) => y.at - x.at);
 }
+const shortOf = (id, text) => state.readings[id]?.gist || cutN(String(text || '').replace(/\s+/g, ' ').trim(), 26);
 function maybeSay(pokes) {
   const el = $('#slime-say'); if (!el) return;
   if (pokes < 2 || Math.random() > 0.35) return;
   let dayCount = 0; try { dayCount = Number(localStorage.getItem(`slime-said:${todayKey()}`) || 0); } catch {}
-  if (dayCount >= 3) return;
-  const lines = sayLines().filter(l => !saidToday.has(l)); if (!lines.length) return;
-  const line = lines[Math.floor(Math.random() * lines.length)]; saidToday.add(line);
-  try { localStorage.setItem(`slime-said:${todayKey()}`, String(dayCount + 1)); } catch {}
-  showSay(line);
+  if (dayCount >= 8) return;
+  const items = sayItems(); if (!items.length) return;
+  let last = ''; try { last = localStorage.getItem('slime-said-last') || ''; } catch {}
+  const x = items[(items.findIndex(i => i.id === last) + 1) % items.length];   // 지난번 다음 것 (처음이거나 끝이면 가장 최근부터)
+  try { localStorage.setItem(`slime-said:${todayKey()}`, String(dayCount + 1)); localStorage.setItem('slime-said-last', x.id); } catch {}
+  showSay(`${mdLabel(x.date)} · ${shortOf(x.id, x.text)}`, { ...x.go, id: x.id });
 }
 // 슬라임이 먹은 기록 — 생각, 책 문장, 슬라임에게 한 답. 오래된 것부터.
 // ── AI 사용량 ── 요청마다 아래에 잠깐 보여 주고, '나'에 모아 둡니다. 값은 Claude Haiku 5.5 기준 대략치.
@@ -172,24 +174,26 @@ function tagCounts(sinceDays = 0) {
 let reading = false, readBackoff = 0;
 async function readRecords() {
   if (reading || !ready || busy || !state.profile.aiConsentAt || !AI_ENDPOINT || !navigator.onLine || Date.now() < readBackoff) return;
-  const todo = aiSources().filter(x => state.readings[x.id]?.h !== x.h).slice(0, 25);
+  const todo = aiSources().filter(x => state.readings[x.id]?.h !== x.h || state.readings[x.id].gist == null).slice(0, 25);   // 요약(gist)이 아직 없는 예전 기록도 한 번 더
   if (!todo.length) return;
   reading = true;
   try {
-    const res = await fetch(AI_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items: todo.map(({ id, text }) => ({ id, text })), known: tagCounts().slice(0, 80).map(x => x[0]) }), signal: AbortSignal.timeout(30000) });
+    const res = await fetch(AI_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items: todo.map(({ id, text }) => ({ id, text })), known: tagCounts().slice(0, 80).map(x => x[0]), fresh: todo.some(x => x.id === lastFed) ? lastFed : '', name: state.profile.catName || '슬라임', tone: state.profile.tone }), signal: AbortSignal.timeout(30000) });
     if (!res.ok) throw new Error(String(res.status));
     const body = await res.json(); if (!Array.isArray(body?.items)) throw new Error('bad reply');
-    const got = new Map(body.items.map(x => [x.id, x.tags]));
+    const got = new Map(body.items.map(x => [x.id, x]));
     reading = false;
     await change(s => {
       const live = new Set(aiSources().map(x => x.id));
       for (const id of Object.keys(s.readings)) if (!live.has(id)) delete s.readings[id];   // 지운 기록의 주제어도 정리
-      for (const x of todo) s.readings[x.id] = { tags: (got.get(x.id) || []).slice(0, 3), h: x.h, at: now() };
+      for (const x of todo) { const g = got.get(x.id); s.readings[x.id] = { tags: (Array.isArray(g?.tags) ? g.tags : []).slice(0, 3), gist: typeof g?.gist === 'string' ? g.gist.slice(0, 30) : '', h: x.h, at: now() }; }
       addUsage(s, 'tags', body.usage);
     }, '');
     flashUsage('tags', body.usage);
-    const tag = lastFed && state.readings[lastFed]?.tags?.[0];
-    if (tag && route().page === 'home') { lastFed = ''; setTimeout(() => showSay(`음… #${tag} 맛이 나.`), 1200); }
+    // 방금 먹인 생각에 슬라임이 한마디 (예전 중계소라 한마디가 없으면 주제어 맛으로)
+    const fed = lastFed && todo.some(x => x.id === lastFed) ? lastFed : '', bite = fed && typeof body.bite === 'string' ? body.bite.trim() : '', tag = fed && state.readings[fed]?.tags?.[0];
+    if (fed) lastFed = '';
+    if ((bite || tag) && route().page === 'home') setTimeout(() => showSay(bite || `음… #${tag} 맛이 나.`), 300);
   } catch { readBackoff = Date.now() + 5 * 60e3; }
   finally { reading = false; }
 }
@@ -251,9 +255,11 @@ function syncBeads() {
   slime.setLook({ color: slimeLook().color });
   try { localStorage.setItem('slime-seen', JSON.stringify(list.map(b => b.id))); } catch {}
 }
-function beadText(id) {
-  const tags = state.readings[id]?.tags?.length ? state.readings[id].tags.map(t => '#' + t).join(' ') + ' — ' : '';
-  return tags + beadBody(id);
+// 슬라임 안의 방울을 누르면 — 그 기록의 날짜와 짧은 요약 (덧붙인 말은 그 기록의 요약으로)
+function beadSay(id) {
+  const x = sayItems().find(i => i.id === id) || (() => { for (const r of [...state.thoughts.map(t => ['thought', t]), ...state.answers.map(a => ['answer', a]), ...state.books.flatMap(b => b.entries.map(e => ['entry', e, b.id]))]) { const m = (r[1].more || []).find(y => y.id === id); if (m) return { id: r[1].id, date: m.createdAt, text: m.text, go: { kind: r[0], book: r[2] } }; } })();
+  if (x) return showSay(`${mdLabel(x.date)} · ${state.readings[x.id]?.gist && x.id === id ? state.readings[x.id].gist : cutN(x.text.replace(/\s+/g, ' '), 26)}`, { ...x.go, id: x.id });
+  showSay(beadBody(id));
 }
 function beadBody(id) {
   const th = state.thoughts.find(x => x.id === id); if (th) return `${dateLabel(th.createdAt)}의 생각. “${th.text.length > 70 ? th.text.slice(0, 70) + '…' : th.text}”`;
@@ -262,9 +268,11 @@ function beadBody(id) {
   for (const b of state.books) { const e = b.entries.find(x => x.id === id); if (e) return `『${b.title}』 ${e.page ? `p. ${e.page}` : ''} “${e.text.length > 60 ? e.text.slice(0, 60) + '…' : e.text}”`; }
   return '';
 }
-function showSay(line) {
+// go: 말풍선을 누르면 갈 기록 { kind: thought | answer | entry, id, book }
+function showSay(line, go) {
   const el = $('#slime-say'); if (!el || !line) return;
-  el.textContent = line; el.hidden = false; el.classList.add('show');
+  el.textContent = go ? line + ' ›' : line; el.hidden = false; el.classList.add('show'); el.classList.toggle('go', !!go);
+  el.onclick = go ? () => { focusRec = go.id; if (go.kind === 'thought') location.hash = 'thoughts'; else if (go.kind === 'answer') { talkFilter = 'ask'; location.hash = 'talk'; } else { entryTab = 'entries'; location.hash = `book/${go.book}`; } } : null;
   clearTimeout(maybeSay.timer); maybeSay.timer = setTimeout(() => { el.classList.remove('show'); setTimeout(() => { el.hidden = true; }, 400); }, 7000);
 }
 // 밤(21시~6시)에는 어두워지고 슬라임이 졸아요
@@ -292,7 +300,7 @@ function renderHome() {
     ${feedHtml()}
   </section>`;
   wireFeed();
-  try { slime = mountSlime($('#slime-stage'), { onPoke: maybeSay, onBead: id => showSay(beadText(id)), onDoubleTap: () => $('#feed-input')?.focus(), onSwell: () => showSay(say(['꾹… 더 누르면 터질 것 같아!', '꾹… 더 누르면 터질 것 같아!'])), onPop: popToBoard, reduced: matchMedia('(prefers-reduced-motion: reduce)').matches }); syncBeads(); syncNight(); }
+  try { slime = mountSlime($('#slime-stage'), { onPoke: maybeSay, onBead: beadSay, onDoubleTap: () => $('#feed-input')?.focus(), onSwell: () => showSay(say(['꾹… 더 누르면 터질 것 같아!', '꾹… 더 누르면 터질 것 같아!'])), onPop: popToBoard, reduced: matchMedia('(prefers-reduced-motion: reduce)').matches }); syncBeads(); syncNight(); }
   catch (e) { $('#slime-stage').innerHTML = `<p class="empty">이 브라우저에서는 슬라임을 그릴 수 없습니다.<br><small>${esc(e.message)}</small></p>`; }
 }
 // ── 기록 지도 ── 슬라임이 터지면 안에 있던 기록들이 주제어로 이어진 지도로 펼쳐집니다

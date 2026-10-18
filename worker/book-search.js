@@ -6,7 +6,7 @@
  *   ANTHROPIC_KEY  — 슬라임이 기록 읽기 (Anthropic API 키)
  *
  * GET  /?q=독서의 기술   → 책 검색. [{ title, authors, publisher, cover, isbn }, ...]
- * POST /ai/tags          → 기록마다 주제어 1~3개. { items: [{ id, text }], known: [주제어] } → { items: [{ id, tags }] }
+ * POST /ai/tags          → 기록마다 주제어 1~3개와 짧은 요약. { items: [{ id, text }], known: [주제어], fresh?, name?, tone? } → { items: [{ id, tags, gist }], bite: 방금 먹인 기록(fresh)에 슬라임이 하는 한마디 }
  * POST /ai/titles        → 책 문장마다 짧은 제목. { book, items: [{ id, text }] } → { items: [{ id, title }] }
  * POST /ai/chat          → 슬라임과 이야기(토론). { name, tone, topic, memory: [{ date, kind, text }], messages: [{ role, text }] } → { reply, next: [이어서 꺼낼 말] }
  *                          memory = 이 사람이 앱에 남긴 것들 — 슬라임은 이걸 기억으로 삼아 이야기합니다
@@ -86,6 +86,10 @@ async function tags(request, env, json) {
     clean.push({ id: it.id, text: it.text.slice(0, MAX_TEXT) });
   }
   const known = (Array.isArray(body.known) ? body.known : []).filter(t => typeof t === 'string' && t.length <= 12).slice(0, MAX_KNOWN);
+  // fresh: 방금 먹인 기록의 id — 슬라임이 그 기록을 보고 한 줄 말합니다 (bite)
+  const fresh = typeof body.fresh === 'string' && clean.some(c => c.id === body.fresh) ? body.fresh : '';
+  const name = typeof body.name === 'string' && body.name.trim() ? body.name.trim().slice(0, 30) : '슬라임';
+  const tone = body.tone === 'you' ? 'you' : 'we';
 
   const system = [
     '당신은 한 사람이 자기 자신에 대해 적은 짧은 기록을 읽고, 기록마다 주제어를 붙이는 도우미입니다.',
@@ -95,6 +99,13 @@ async function tags(request, env, json) {
     '- 사람을 평가하거나 진단하는 말은 쓰지 마세요. 예: 내향적, 게으름, 우울, 문제, 성공',
     '- "이미 쓰는 주제어" 목록에 뜻이 같은 단어가 있으면 그 단어를 그대로 쓰세요. 비슷한 말을 새로 만들지 마세요.',
     '- 모든 기록의 id를 빠짐없이 그대로 돌려주세요.',
+    '- 기록마다 gist도 붙이세요: 무슨 기록인지 한눈에 알아볼 짧은 요약. 한국어 8~20글자. 원문을 앞에서부터 자르지 말고 뜻을 줄여 쓰세요. 마침표·따옴표 없이. 예: 혼자 걷는 출근길이 좋았던 날, 회의 뒤 기운이 빠짐',
+    ...(fresh ? [
+      `- bite: 방금 먹인 기록(id ${fresh})을 보고 "${name}"라는 작은 슬라임이 하는 한마디. 반말 한 문장, 15~40글자.`,
+      '  칭찬·위로·조언·평가 말고, 본 것을 짚으세요. 그 기록의 핵심이나 다른 기록과 겹치는 주제어가 있으면 그걸로. 예: "출근길 얘기가 또 나왔네. 이번엔 피곤한 쪽이야."',
+      tone === 'we' ? '  이 사람을 "우리"라고 불러도 됩니다.' : '  이 사람을 "너"라고 부르세요.',
+      '  물음표로 끝내지 마세요.',
+    ] : ['- bite는 빈 문자열로 두세요.']),
   ].join('\n');
   const user = JSON.stringify({ '이미 쓰는 주제어': known, '기록': clean });
 
@@ -119,13 +130,14 @@ async function tags(request, env, json) {
                   type: 'array',
                   items: {
                     type: 'object',
-                    properties: { id: { type: 'string' }, tags: { type: 'array', items: { type: 'string' } } },
-                    required: ['id', 'tags'],
+                    properties: { id: { type: 'string' }, tags: { type: 'array', items: { type: 'string' } }, gist: { type: 'string' } },
+                    required: ['id', 'tags', 'gist'],
                     additionalProperties: false,
                   },
                 },
+                bite: { type: 'string' },
               },
-              required: ['items'],
+              required: ['items', 'bite'],
               additionalProperties: false,
             },
           },
@@ -145,8 +157,9 @@ async function tags(request, env, json) {
   const ids = new Set(clean.map(c => c.id));
   const result = (out.items || [])
     .filter(it => ids.has(it.id) && Array.isArray(it.tags))
-    .map(it => ({ id: it.id, tags: [...new Set(it.tags.filter(t => typeof t === 'string').map(t => t.trim()).filter(t => t && t.length <= 12))].slice(0, 3) }));
-  return json({ items: result, model: MODEL, usage: data.usage ? { input: data.usage.input_tokens, output: data.usage.output_tokens } : undefined });
+    .map(it => ({ id: it.id, tags: [...new Set(it.tags.filter(t => typeof t === 'string').map(t => t.trim()).filter(t => t && t.length <= 12))].slice(0, 3), gist: typeof it.gist === 'string' ? it.gist.replace(/["'“”‘’.。]/g, '').trim().slice(0, 30) : '' }));
+  const bite = fresh && typeof out.bite === 'string' ? out.bite.trim().slice(0, 80) : '';
+  return json({ items: result, bite, model: MODEL, usage: data.usage ? { input: data.usage.input_tokens, output: data.usage.output_tokens } : undefined });
 }
 
 // ── 문장 제목: 이야기 목록에서 알아보기 쉽게, 책에서 옮겨 적은 문장마다 짧은 제목 ─────────
