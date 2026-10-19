@@ -36,7 +36,7 @@ export function mountBoard(canvas, { nodes, links, onSelect = () => {}, reduced 
     }
     for (const e of edges) {
       const dx = e.b.x - e.a.x, dy = e.b.y - e.a.y, d = Math.hypot(dx, dy) || 1;
-      const len = e.kind === 'from' ? 28 : e.kind === 'book' ? 38 : 44, k = (d - len) / d * 0.06 * alpha;
+      const len = e.kind === 'from' ? 28 : e.kind === 'link' ? 34 : e.kind === 'book' ? 38 : 44, k = (d - len) / d * 0.06 * alpha;
       e.a.vx += dx * k / e.a.w; e.a.vy += dy * k / e.a.w; e.b.vx -= dx * k / e.b.w; e.b.vy -= dy * k / e.b.w;
     }
     for (const p of nodes) {
@@ -62,10 +62,10 @@ export function mountBoard(canvas, { nodes, links, onSelect = () => {}, reduced 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
     ctx.translate(W / 2 + view.x, H / 2 + view.y); ctx.scale(view.k, view.k);
     const lit = sel ? near.get(sel.id) : null, on = p => !sel || p === sel || lit.has(p.id);
-    ctx.lineWidth = 1.2 / view.k;
     for (const e of edges) {
       const hot = sel && (e.a === sel || e.b === sel);
-      ctx.strokeStyle = hot ? 'rgba(108,178,124,.9)' : sel ? 'rgba(74,60,49,.06)' : e.kind === 'tag' ? 'rgba(108,178,124,.35)' : 'rgba(150,120,90,.28)';
+      ctx.lineWidth = (e.kind === 'link' ? 2.6 : 1.2) / view.k;   // 내가 이어 둔 선은 굵게
+      ctx.strokeStyle = hot ? 'rgba(108,178,124,.9)' : sel ? 'rgba(74,60,49,.06)' : e.kind === 'tag' ? 'rgba(108,178,124,.35)' : e.kind === 'link' ? 'rgba(255,122,89,.6)' : 'rgba(150,120,90,.28)';
       ctx.beginPath(); ctx.moveTo(e.a.x, e.a.y); ctx.lineTo(e.b.x, e.b.y); ctx.stroke();
     }
     for (const p of nodes) {

@@ -4,7 +4,7 @@ export const now = () => new Date().toISOString();
 export const emptyProfile = () => ({ catName: '', tone: 'we', aiConsentAt: '' });
 // AI 사용량 — 요청 종류별 호출 수와 토큰
 export const emptyUsage = () => ({ since: '', calls: 0, input: 0, output: 0, byKind: {} });
-export const emptyState = () => ({ version: VERSION, profile: emptyProfile(), books: [], thoughts: [], answers: [], moments: [], readings: {}, titles: {}, insights: null, chats: [], usage: emptyUsage(), extraScales: [] });
+export const emptyState = () => ({ version: VERSION, profile: emptyProfile(), books: [], thoughts: [], answers: [], moments: [], readings: {}, titles: {}, links: [], insights: null, chats: [], usage: emptyUsage(), extraScales: [] });
 const object = v => v && typeof v === 'object' && !Array.isArray(v);
 function text(v, label, max = 100000, optional = false) {
   if (v == null && optional) return '';
@@ -82,6 +82,10 @@ export function normalize(input) {
     ? { date: ins.date.slice(0, 10), at: text(ins.at, '날짜', 100, true), question: ins.question.slice(0, 120), lines: ins.lines.filter(l => object(l) && typeof l.text === 'string').slice(0, 6).map(l => ({ text: l.text.slice(0, 200), ids: Array.isArray(l.ids) ? l.ids.filter(x => typeof x === 'string').slice(0, 5) : [] })) }
     : null;
   const extraScales = v3 && Array.isArray(p.extraScales) ? structuredClone(p.extraScales) : [];
+  // 이어 둔 기록 — 슬라임이 제안하고 내가 '이어 줘'를 누른 두 기록. no: '아니야'라고 한 짝 (다시 제안하지 않게)
+  const links = !v3 ? [] : list(p.links, '연결', true).slice(-5000)
+    .filter(l => object(l) && typeof l.a === 'string' && typeof l.b === 'string' && l.a && l.b && l.a !== l.b && l.a.length <= 100 && l.b.length <= 100)
+    .map(l => ({ a: l.a, b: l.b, at: typeof l.at === 'string' ? l.at.slice(0, 40) : '', why: typeof l.why === 'string' ? l.why.slice(0, 80) : '', ...(l.no ? { no: true } : {}) }));
   // 슬라임과 나눈 이야기
   const chats = !v3 ? [] : list(p.chats, '이야기', true).map(c => {
     row(c); const t = object(c.topic) ? c.topic : {};
@@ -93,7 +97,7 @@ export function normalize(input) {
   const num = v => Number.isFinite(v) && v >= 0 ? Math.round(v) : 0;
   const u = v3 && object(p.usage) ? p.usage : {}, usage = { since: typeof u.since === 'string' ? u.since.slice(0, 40) : '', calls: num(u.calls), input: num(u.input), output: num(u.output), byKind: {} };
   if (object(u.byKind)) for (const [k, v] of Object.entries(u.byKind).slice(0, 10)) if (object(v)) usage.byKind[k.slice(0, 20)] = { calls: num(v.calls), input: num(v.input), output: num(v.output) };
-  return { version: VERSION, profile, books, thoughts, answers, moments, readings, titles, insights, chats, usage, extraScales };
+  return { version: VERSION, profile, books, thoughts, answers, moments, readings, titles, links, insights, chats, usage, extraScales };
 }
 export function backup(state) { return JSON.stringify({ format: 'reading-notebook', exportedAt: now(), data: normalize(state) }, null, 2); }
 export function stats(s) { return { books: s.books.length, entries: s.books.reduce((n, b) => n + b.entries.length, 0), questions: s.books.reduce((n, b) => n + b.questions.length, 0), thoughts: s.thoughts.length, answers: s.answers.length, chats: (s.chats || []).length, moments: s.moments.length }; }
@@ -147,7 +151,7 @@ export function nextQuestion(state, now = new Date(), skipped = []) {
 }
 
 // 기록 지도: 기록은 점, 주제어와 책은 큰 점. 기록은 자기 주제어(슬라임이 붙인 것)와 책에 이어지고,
-// 문장에서 생긴 질문은 그 문장에 이어집니다. 이야기를 나눈 기록에는 마디 수가 붙습니다.
+// 문장에서 생긴 질문은 그 문장에 이어집니다. 내가 이어 둔 기록끼리도 선으로. 이야기를 나눈 기록에는 마디 수가 붙습니다.
 export function boardGraph(s) {
   const nodes = [], links = [], tags = new Map(), talk = new Map();
   for (const c of s.chats || []) if (c.messages.length) talk.set(c.topic.ref, (talk.get(c.topic.ref) || 0) + c.messages.length);
@@ -160,6 +164,8 @@ export function boardGraph(s) {
   }
   for (const t of s.thoughts) { rec('thought', t); tagged(t.id); }
   for (const a of s.answers) { rec('answer', a, { prompt: a.prompt }); tagged(a.id); }
+  const ids = new Set(nodes.map(n => n.id));   // 내가 이어 둔 기록끼리 (둘 다 남아 있을 때만)
+  for (const l of s.links || []) if (!l.no && ids.has(l.a) && ids.has(l.b)) links.push({ s: l.a, t: l.b, kind: 'link' });
   for (const [t, n] of tags) nodes.push({ id: 'tag:' + t, kind: 'tag', label: t, count: n });
   return { nodes, links };
 }

@@ -7,3 +7,5 @@ export const AI_SUMMARY_ENDPOINT = new URL('ai/summary', BOOK_SEARCH_ENDPOINT).h
 export const AI_CHAT_ENDPOINT = new URL('ai/chat', BOOK_SEARCH_ENDPOINT).href;
 // 이야기 목록의 문장 제목
 export const AI_TITLES_ENDPOINT = new URL('ai/titles', BOOK_SEARCH_ENDPOINT).href;
+// 이어 주기 — 방금 먹인 생각과 이어지는 예전 기록
+export const AI_LINKS_ENDPOINT = new URL('ai/links', BOOK_SEARCH_ENDPOINT).href;

@@ -2,9 +2,9 @@ import { uid, now, emptyState, normalize, backup, stats, matchesBook, dateLabel,
 import { mountSlime } from './slime.js';
 import { mountBoard, BOARD_COLORS } from './board.js';
 import { openStore, load, commit, previous } from './storage.js';
-import { BOOK_SEARCH_ENDPOINT, AI_ENDPOINT, AI_SUMMARY_ENDPOINT, AI_CHAT_ENDPOINT, AI_TITLES_ENDPOINT } from './config.js';
+import { BOOK_SEARCH_ENDPOINT, AI_ENDPOINT, AI_SUMMARY_ENDPOINT, AI_CHAT_ENDPOINT, AI_TITLES_ENDPOINT, AI_LINKS_ENDPOINT } from './config.js';
 
-const BUILD = '1018b';   // 폰에서 어떤 판을 보고 있는지 확인용
+const BUILD = '1019a';   // 폰에서 어떤 판을 보고 있는지 확인용
 const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 // 이름 뒤 조사 — 받침이 있으면 이/과, 없으면 가/와 (뚱이가, 말랑이)
@@ -134,7 +134,7 @@ function maybeSay(pokes) {
 }
 // 슬라임이 먹은 기록 — 생각, 책 문장, 슬라임에게 한 답. 오래된 것부터.
 // ── AI 사용량 ── 요청마다 아래에 잠깐 보여 주고, '나'에 모아 둡니다. 값은 Claude Haiku 5.5 기준 대략치.
-const USAGE_LABEL = { tags: '주제어 붙이기', titles: '문장 제목', chat: '이야기', summary: '책 정리', reflect: '오늘의 말(예전)' };
+const USAGE_LABEL = { tags: '주제어 붙이기', titles: '문장 제목', links: '이어 주기', chat: '이야기', summary: '책 정리', reflect: '오늘의 말(예전)' };
 const PRICE = { input: 0.10 / 1e6, output: 0.50 / 1e6 };
 const dollars = u => (u.input * PRICE.input + u.output * PRICE.output);
 const WON_PER_USD = 1400;   // 대략 환율 — 정확한 값이 필요하면 여기만 고치면 됩니다
@@ -194,6 +194,7 @@ async function readRecords() {
     const fed = lastFed && todo.some(x => x.id === lastFed) ? lastFed : '', bite = fed && typeof body.bite === 'string' ? body.bite.trim() : '', tag = fed && state.readings[fed]?.tags?.[0];
     if (fed) lastFed = '';
     if ((bite || tag) && route().page === 'home') setTimeout(() => showSay(bite || `음… #${tag} 맛이 나.`), 300);
+    if (fed) setTimeout(() => suggestLinks(fed), 1500);   // 한마디 뒤에, 이어지는 예전 기록이 있으면 제안
   } catch { readBackoff = Date.now() + 5 * 60e3; }
   finally { reading = false; }
 }
@@ -289,14 +290,63 @@ function homeTop() {
   const map = `<button class="home-map" data-action="open-board" aria-label="기록 지도 펼치기" title="기록 지도 — 슬라임을 꾹 눌러도 펼쳐져요"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="7" r="2.4" fill="currentColor"/><circle cx="18" cy="6" r="2" fill="currentColor"/><circle cx="12" cy="14" r="3" fill="currentColor"/><circle cx="5.5" cy="19" r="1.8" fill="currentColor"/><circle cx="19" cy="18" r="2.2" fill="currentColor"/><path d="M6 7l6 7 6-8M12 14l-6.5 5M12 14l7 4" stroke="currentColor" stroke-width="1.6" fill="none"/></svg></button>`;
   return `<a class="home-name" href="#me" aria-label="${esc(name)} — 나 화면으로">${miniSlime(look.color)}<b>${esc(name)}</b><span>방울 ${n}${look.tag ? ` · #${esc(look.tag)}` : ''}</span></a><span class="home-right">${map}<span class="home-day">${icon}${esc(day)}</span></span>`;
 }
+// ── 이어 주기 ── 생각을 먹이면 슬라임이 예전 기록 가운데 뜻이 이어지는 것을 찾아 첫 화면 말풍선으로 제안합니다.
+// '이어 줘'를 누르면 두 기록이 이어지고(기록 지도에 굵은 선), '아니야'면 그 짝은 다시 제안하지 않습니다.
+let linkSuggest = null, linking = false;   // { from, items: [{ id, why }] } — 하나씩 묻습니다
+function linkPool() {
+  const out = [], add = (id, at, label, text) => { if (text && text.trim()) out.push({ id, at: Date.parse(at) || 0, date: at, label, text }); };
+  for (const t of state.thoughts) add(t.id, t.createdAt, '생각', t.text);
+  for (const a of state.answers) add(a.id, a.createdAt, '답', `${a.prompt} → ${a.text}`);
+  for (const b of state.books) {
+    for (const e of b.entries) add(e.id, e.createdAt, '메모', e.note);
+    for (const q of b.questions) add(q.id, q.createdAt, '질문', q.text + (q.answer ? ` → ${q.answer}` : ''));
+  }
+  return out;
+}
+async function suggestLinks(fromId) {
+  if (linking || !state.profile.aiConsentAt || !AI_LINKS_ENDPOINT || !navigator.onLine) return;
+  const pool = linkPool(), from = pool.find(x => x.id === fromId); if (!from) return;
+  const paired = new Set((state.links || []).flatMap(l => l.a === fromId ? [l.b] : l.b === fromId ? [l.a] : []));
+  const mine = new Set(state.readings[fromId]?.tags || []);
+  // 주제어가 겹치는 것을 먼저, 그다음 최근 것 — 40개까지
+  const cands = pool.filter(x => x.id !== fromId && !paired.has(x.id)).map(x => ({ ...x, score: (state.readings[x.id]?.tags || []).filter(t => mine.has(t)).length }))
+    .sort((a, b) => b.score - a.score || b.at - a.at).slice(0, 40);
+  if (!cands.length) return;
+  linking = true;
+  try {
+    const res = await fetch(AI_LINKS_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(30000),
+      body: JSON.stringify({ fresh: { id: fromId, text: from.text.slice(0, 600) }, candidates: cands.map(x => ({ id: x.id, date: mdLabel(x.date), text: `${x.label}: ${x.text.slice(0, 240)}` })) }) });
+    if (!res.ok) throw new Error(String(res.status));
+    const body = await res.json(), ok = new Set(cands.map(x => x.id));
+    const items = (Array.isArray(body?.items) ? body.items : []).filter(x => ok.has(x?.id)).slice(0, 2).map(x => ({ id: x.id, why: String(x.why || '').slice(0, 60) }));
+    linking = false;
+    if (body?.usage) await change(s => { addUsage(s, 'links', body.usage); }, '');
+    if (items.length) { linkSuggest = { from: fromId, items }; if (route().page === 'home') renderHome(); }
+  } catch {} finally { linking = false; }
+}
+function linkBubble() {
+  if (!linkSuggest) return '';
+  const pool = linkPool();
+  while (linkSuggest.items.length && !pool.some(x => x.id === linkSuggest.items[0].id)) linkSuggest.items.shift();   // 그새 지운 기록은 건너뜀
+  if (!linkSuggest.items.length || !pool.some(x => x.id === linkSuggest.from)) { linkSuggest = null; return ''; }
+  const it = linkSuggest.items[0], x = pool.find(r => r.id === it.id);
+  return `<div class="bubble link-bubble"><p class="bubble-text">이거 ${esc(mdLabel(x.date))} ${esc(x.label)} “${esc(shortOf(x.id, x.text))}”랑 이어지는 것 같아.${it.why ? `<small>${esc(it.why)}</small>` : ''}</p><div class="bubble-actions"><button class="primary" data-action="link-yes">이어 줘</button><button class="quiet" data-action="link-no">아니야</button></div></div>`;
+}
+const homeBubble = () => linkBubble() || nameBubble();
+function answerLink(yes) {
+  if (!linkSuggest) return;
+  const from = linkSuggest.from, it = linkSuggest.items.shift();
+  if (!linkSuggest.items.length) linkSuggest = null;
+  change(s => { (s.links ||= []).push({ a: from, b: it.id, at: now(), why: it.why, ...(yes ? {} : { no: true }) }); }, yes ? '이어 두었어요. 기록 지도에 선으로 보여요.' : '');
+}
 function renderHome() {
   // 슬라임이 떠 있는 동안에는 말풍선만 바꿉니다 — 출렁이던 게 멈추지 않도록
-  if (slime && $('#slime-stage')) { $('#home-bubble').innerHTML = nameBubble(); $('#home-bubble').hidden = !nameBubble(); syncBeads(); $('#home-top').innerHTML = homeTop(); syncBackupNudge(); return; }
+  if (slime && $('#slime-stage')) { const hb = homeBubble(); $('#home-bubble').innerHTML = hb; $('#home-bubble').hidden = !hb; syncBeads(); $('#home-top').innerHTML = homeTop(); syncBackupNudge(); return; }
   $('#main').innerHTML = `<section class="slime-home" aria-label="슬라임">
     <div class="home-top" id="home-top">${homeTop()}</div>
     <div class="backup-slot" id="backup-nudge">${backupNudgeHtml()}</div>
     <div class="slime-stage" id="slime-stage"><div class="slime-say" id="slime-say" role="status" hidden></div></div>
-    <div class="home-bubble" id="home-bubble" ${nameBubble() ? '' : 'hidden'}>${nameBubble()}</div>
+    <div class="home-bubble" id="home-bubble" ${homeBubble() ? '' : 'hidden'}>${homeBubble()}</div>
     ${feedHtml()}
   </section>`;
   wireFeed();
@@ -334,7 +384,7 @@ function renderBoard() {
   $('#main').innerHTML = `<section class="board" aria-label="기록 지도">
     <canvas id="board-canvas" role="img" aria-label="기록 ${g.nodes.filter(n => !['tag', 'book'].includes(n.kind)).length}개가 주제어와 책으로 이어진 지도. 점을 누르면 아래에 그 기록이 나옵니다."></canvas>
     <div class="board-top"><a class="back" href="#home">← 슬라임</a><h1>기록 지도</h1><button class="tool" data-action="board-fit" aria-label="전체 보기" title="전체 보기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>
-    <p class="board-legend">${legend.map(([k, l]) => `<span><i style="background:${BOARD_COLORS[k]}"></i>${l}</span>`).join('')}<span><i class="ring"></i>이야기함</span></p>
+    <p class="board-legend">${legend.map(([k, l]) => `<span><i style="background:${BOARD_COLORS[k]}"></i>${l}</span>`).join('')}<span><i class="ring"></i>이야기함</span>${(state.links || []).some(l => !l.no) ? '<span><i class="linked"></i>이어 둠</span>' : ''}</p>
     ${!g.nodes.length ? `<div class="board-empty">${empty('아직 펼칠 기록이 없어요', '생각을 먹이거나 책에 문장을 남기면 여기 점으로 생겨요.')}</div>` : !tagged ? `<p class="board-note">${state.profile.aiConsentAt ? '슬라임이 기록을 읽는 중이에요. 주제어가 붙으면 기록끼리 이어집니다.' : '나 → <b>슬라임이 기록 읽기</b>를 켜면 기록이 주제어로 이어져요. 지금은 책끼리만 이어져 있어요.'}</p>` : ''}
     <aside class="board-card" id="board-card" hidden aria-live="polite"></aside>
   </section>`;
@@ -1072,6 +1122,8 @@ document.addEventListener('click', e => {
     case 'talk-question': talkFocus = true; startTalk('question', id, book); break;
     case 'talk-quote': { if (ctxOpen) { ctxOpen = false; document.body.classList.remove('ctx-open'); $('[data-action=talk-ctx]')?.setAttribute('aria-pressed', 'false'); } const el = $('#talk-input'); if (el) { el.value = (el.value ? el.value.replace(/\s*$/, '\n') : '') + `“${btn.dataset.text}” `; el.dispatchEvent(new Event('input')); el.focus(); } break; }
     case 'talk-keep': talkKeep(route().id); break;
+    case 'link-yes': answerLink(true); break;
+    case 'link-no': answerLink(false); break;
     case 'soft-kb': { try { localStorage.setItem('soft-kb', softKb() ? '0' : '1'); } catch {} renderTalk(route().id); $('#talk-input')?.focus(); notice(softKb() ? '화면 자판을 띄웁니다.' : '화면 자판을 숨깁니다. 블루투스 키보드로 적으세요.'); break; }
     case 'desk-book': case 'desk-thoughts': {   // 왼쪽 아래 책(또는 생각)을 고르면 그 갈래에서 마지막으로 이야기한 것을 엽니다
       const lane = action === 'desk-book' ? id : 'thought', last = state.chats.filter(x => x.messages.length && laneOf(x) === lane).sort((a, b) => lastAt(b) - lastAt(a))[0];
