@@ -4,7 +4,7 @@ import { mountBoard, BOARD_COLORS } from './board.js';
 import { openStore, load, commit, previous } from './storage.js';
 import { BOOK_SEARCH_ENDPOINT, AI_ENDPOINT, AI_SUMMARY_ENDPOINT, AI_CHAT_ENDPOINT, AI_TITLES_ENDPOINT, AI_LINKS_ENDPOINT } from './config.js';
 
-const BUILD = '1019a';   // 폰에서 어떤 판을 보고 있는지 확인용
+const BUILD = '1019b';   // 폰에서 어떤 판을 보고 있는지 확인용
 const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 // 이름 뒤 조사 — 받침이 있으면 이/과, 없으면 가/와 (뚱이가, 말랑이)
@@ -269,11 +269,18 @@ function beadBody(id) {
   for (const b of state.books) { const e = b.entries.find(x => x.id === id); if (e) return `『${b.title}』 ${e.page ? `p. ${e.page}` : ''} “${e.text.length > 60 ? e.text.slice(0, 60) + '…' : e.text}”`; }
   return '';
 }
-// go: 말풍선을 누르면 갈 기록 { kind: thought | answer | entry, id, book }
+// 기록이 있는 자리로 가서 그 기록을 비춥니다. go: { kind: thought | answer | entry | question, id, book }
+function goRecord(go) {
+  focusRec = go.id;
+  if (go.kind === 'thought') location.hash = 'thoughts';
+  else if (go.kind === 'answer') { talkFilter = 'ask'; location.hash = 'talk'; }
+  else { entryTab = go.kind === 'question' ? 'questions' : 'entries'; location.hash = `book/${go.book}`; }
+}
+// go: 말풍선을 누르면 갈 기록
 function showSay(line, go) {
   const el = $('#slime-say'); if (!el || !line) return;
   el.textContent = go ? line + ' ›' : line; el.hidden = false; el.classList.add('show'); el.classList.toggle('go', !!go);
-  el.onclick = go ? () => { focusRec = go.id; if (go.kind === 'thought') location.hash = 'thoughts'; else if (go.kind === 'answer') { talkFilter = 'ask'; location.hash = 'talk'; } else { entryTab = 'entries'; location.hash = `book/${go.book}`; } } : null;
+  el.onclick = go ? () => goRecord(go) : null;
   clearTimeout(maybeSay.timer); maybeSay.timer = setTimeout(() => { el.classList.remove('show'); setTimeout(() => { el.hidden = true; }, 400); }, 7000);
 }
 // 밤(21시~6시)에는 어두워지고 슬라임이 졸아요
@@ -294,12 +301,12 @@ function homeTop() {
 // '이어 줘'를 누르면 두 기록이 이어지고(기록 지도에 굵은 선), '아니야'면 그 짝은 다시 제안하지 않습니다.
 let linkSuggest = null, linking = false;   // { from, items: [{ id, why }] } — 하나씩 묻습니다
 function linkPool() {
-  const out = [], add = (id, at, label, text) => { if (text && text.trim()) out.push({ id, at: Date.parse(at) || 0, date: at, label, text }); };
-  for (const t of state.thoughts) add(t.id, t.createdAt, '생각', t.text);
-  for (const a of state.answers) add(a.id, a.createdAt, '답', `${a.prompt} → ${a.text}`);
+  const out = [], add = (id, at, label, text, go) => { if (text && text.trim()) out.push({ id, at: Date.parse(at) || 0, date: at, label, text, go: { ...go, id } }); };
+  for (const t of state.thoughts) add(t.id, t.createdAt, '생각', t.text, { kind: 'thought' });
+  for (const a of state.answers) add(a.id, a.createdAt, '답', `${a.prompt} → ${a.text}`, { kind: 'answer' });
   for (const b of state.books) {
-    for (const e of b.entries) add(e.id, e.createdAt, '메모', e.note);
-    for (const q of b.questions) add(q.id, q.createdAt, '질문', q.text + (q.answer ? ` → ${q.answer}` : ''));
+    for (const e of b.entries) add(e.id, e.createdAt, '메모', e.note, { kind: 'entry', book: b.id });
+    for (const q of b.questions) add(q.id, q.createdAt, '질문', q.text + (q.answer ? ` → ${q.answer}` : ''), { kind: 'question', book: b.id });
   }
   return out;
 }
@@ -338,6 +345,20 @@ function answerLink(yes) {
   const from = linkSuggest.from, it = linkSuggest.items.shift();
   if (!linkSuggest.items.length) linkSuggest = null;
   change(s => { (s.links ||= []).push({ a: from, b: it.id, at: now(), why: it.why, ...(yes ? {} : { no: true }) }); }, yes ? '이어 두었어요. 기록 지도에 선으로 보여요.' : '');
+}
+// ── 이어진 기록 (백링크) ── 기록마다 내가 이어 둔 것들. 누르면 그 기록으로(이야기 화면에서는 그 기록으로 이야기), ×로 연결 끊기
+function linkedOf(id) {
+  const pool = linkPool();
+  return (state.links || []).filter(l => !l.no && (l.a === id || l.b === id)).map(l => { const x = pool.find(r => r.id === (l.a === id ? l.b : l.a)); return x && { ...x, why: l.why }; }).filter(Boolean).sort((a, b) => b.at - a.at);
+}
+function linkedHtml(id, open = false) {
+  const list = linkedOf(id); if (!list.length) return '';
+  return `<details class="linked" ${open ? 'open' : ''}><summary>이어진 기록 ${list.length}</summary>${list.map(x => `<div class="linked-row"><button class="linked-go" data-action="linked-go" data-id="${esc(x.id)}"><small>${esc(mdLabel(x.date))} · ${esc(x.label)}</small><span>${esc(shortOf(x.id, x.text))}</span>${x.why ? `<em>${esc(x.why)}</em>` : ''}</button><button class="linked-del" data-action="unlink" data-id="${esc(id)}" data-other="${esc(x.id)}" aria-label="연결 끊기" title="연결 끊기">×</button></div>`).join('')}</details>`;
+}
+async function unlink(a, b) {
+  const pair = l => !l.no && ((l.a === a && l.b === b) || (l.a === b && l.b === a)), gone = (state.links || []).filter(pair);
+  if (!gone.length || !await change(s => { s.links = s.links.filter(l => !pair(l)); }, '')) return;
+  notice('연결을 끊었습니다.', async () => { if (await change(s => { s.links.push(...gone); }, '연결을 되돌렸습니다.')) undoAction = null; });
 }
 function renderHome() {
   // 슬라임이 떠 있는 동안에는 말풍선만 바꿉니다 — 출렁이던 게 멈추지 않도록
@@ -424,7 +445,7 @@ function quoteCard(e, b, type, showBook = false) {
   const question = type === 'questions';
   const from = question && e.from ? b.entries.find(x => x.id === e.from) : null;
   const meta = [showBook ? `<a href="#book/${esc(b.id)}">${esc(b.title)}</a>` : '', !question && e.page ? `p. ${esc(e.page)}` : '', esc(dateLabel(e.createdAt)), question ? (e.answer ? '답을 남김' : '아직 품는 중') : ''].filter(Boolean).join(' · ');
-  return `<article class="q ${question ? 'q-question' : ''} ${question && e.answer ? 'answered' : ''}" id="rec-${esc(e.id)}"><span class="mark" aria-hidden="true">${question ? '?' : '“'}</span>${from ? `<p class="q-from">“${esc(from.text.length > 50 ? from.text.slice(0, 50) + '…' : from.text)}”에서 생긴 질문</p>` : ''}<p class="q-text">${esc(e.text)}</p><p class="q-meta">${meta}</p>${e.note ? `<p class="mine">${esc(e.note)}</p>` : ''}${question ? answerHtml(e) : moreHtml(e.more) + tagLine(e.id)}<div class="q-actions">${talkButton(question ? 'question' : 'entry', e.id, b.id)}${question ? `<button data-action="answer" data-book="${b.id}" data-id="${e.id}">${e.answer ? '답 고치기' : '답 남기기'}</button>` : `<button data-action="ask-from" data-book="${b.id}" data-id="${e.id}">질문 만들기</button>`}<button data-action="edit-record" data-type="${type}" data-book="${b.id}" data-id="${e.id}">수정</button><button data-action="delete-record" data-type="${type}" data-book="${b.id}" data-id="${e.id}">삭제</button></div></article>`;
+  return `<article class="q ${question ? 'q-question' : ''} ${question && e.answer ? 'answered' : ''}" id="rec-${esc(e.id)}"><span class="mark" aria-hidden="true">${question ? '?' : '“'}</span>${from ? `<p class="q-from">“${esc(from.text.length > 50 ? from.text.slice(0, 50) + '…' : from.text)}”에서 생긴 질문</p>` : ''}<p class="q-text">${esc(e.text)}</p><p class="q-meta">${meta}</p>${e.note ? `<p class="mine">${esc(e.note)}</p>` : ''}${question ? answerHtml(e) : moreHtml(e.more) + tagLine(e.id)}${linkedHtml(e.id)}<div class="q-actions">${talkButton(question ? 'question' : 'entry', e.id, b.id)}${question ? `<button data-action="answer" data-book="${b.id}" data-id="${e.id}">${e.answer ? '답 고치기' : '답 남기기'}</button>` : `<button data-action="ask-from" data-book="${b.id}" data-id="${e.id}">질문 만들기</button>`}<button data-action="edit-record" data-type="${type}" data-book="${b.id}" data-id="${e.id}">수정</button><button data-action="delete-record" data-type="${type}" data-book="${b.id}" data-id="${e.id}">삭제</button></div></article>`;
 }
 // 달마다 작은 제목을 두고 왼쪽에 선을 그린 타임라인
 function timeline(items, render) {
@@ -490,7 +511,7 @@ function renderQuestions() {
 let thoughtQuery = '', talkQuery = '';
 const hits = (q, ...texts) => { q = q.trim().toLowerCase(); return !q || texts.some(t => String(t || '').toLowerCase().includes(q)); };
 const searchBox = (id, label, value, hint) => `<div class="search-field list-search"><label class="visually-hidden" for="${id}">${label}</label><input type="search" id="${id}" placeholder="${hint}" value="${esc(value)}"></div>`;
-function thoughtItem(t) { return `<span class="tl-date">${esc(dayShort(t.createdAt))}</span><p class="tl-text">${esc(t.text)}</p>${moreHtml(t.more)}${tagLine(t.id)}<div class="q-actions">${talkButton('thought', t.id)}<button data-action="edit-journal" data-id="${esc(t.id)}">수정</button><button data-action="delete-record" data-type="thoughts" data-id="${esc(t.id)}">삭제</button></div>`; }
+function thoughtItem(t) { return `<span class="tl-date">${esc(dayShort(t.createdAt))}</span><p class="tl-text">${esc(t.text)}</p>${moreHtml(t.more)}${tagLine(t.id)}${linkedHtml(t.id)}<div class="q-actions">${talkButton('thought', t.id)}<button data-action="edit-journal" data-id="${esc(t.id)}">수정</button><button data-action="delete-record" data-type="thoughts" data-id="${esc(t.id)}">삭제</button></div>`; }
 function thoughtResults() {
   const el = $('#thought-results'); if (!el) return;
   const list = [...state.thoughts].reverse().filter(t => hits(thoughtQuery, t.text, ...(t.more || []).map(m => m.text), ...(state.readings[t.id]?.tags || []).map(x => '#' + x)));
@@ -662,7 +683,7 @@ function talkTopicCard(c) {
   const body = k === 'book' ? `<p class="topic-text">『${esc(talkFull(c))}』${book?.author ? ` <small>${esc(book.author)}</small>` : ''}</p>`
     : k === 'answer' ? `<small class="topic-src">${esc(ig(name))} 물었던 것</small><p class="topic-text">${esc(talkFull(c))}</p>${item ? `<p class="mine">${esc(item.text)}</p>` : ''}`
     : `${src}<p class="topic-text">${k === 'question' ? '' : k === 'entry' ? '“' : ''}${esc(talkFull(c))}${k === 'entry' ? '”' : ''}</p>${k === 'entry' && item?.note ? `<p class="mine">${esc(item.note)}</p>` : ''}${k === 'question' && item ? answerHtml(item) : ''}`;
-  return `<div class="talk-topic ${k}">${k === 'question' ? '<span class="mark" aria-hidden="true">?</span>' : ''}${body}${hint}</div>`;
+  return `<div class="talk-topic ${k}">${k === 'question' ? '<span class="mark" aria-hidden="true">?</span>' : ''}${body}${linkedHtml(c.topic.ref)}${hint}</div>`;
 }
 // 슬라임에게 보낼 배경 — 내가 쓴 것. 문장 하나를 골라 이야기할 때만 그 문장을 함께 보냅니다.
 function bookNotes(b) { return b ? [...b.entries.filter(e => e.note).map(e => `내 메모: ${e.note}`), ...b.questions.map(q => `내 질문: ${q.text}${q.answer ? ` / 내 답: ${q.answer}` : ''}`)] : []; }
@@ -725,7 +746,7 @@ let ctxOpen = false, talkFocus = false;   // talkFocus: 이야기하기를 눌�
 const LANE = { book: 'book', entry: 'book', question: 'book', thought: 'thought', free: 'thought', answer: 'ask' };
 const lastAt = c => Date.parse(c.messages.at(-1)?.at || c.createdAt) || 0;
 function askCard(a) {
-  return `<article class="talk-item ask-item" id="rec-${esc(a.id)}"><span class="status-tag">물음</span><p class="asked">${esc(a.prompt)}</p><p class="ask-text">${esc(a.text)}</p>${moreHtml(a.more)}${tagLine(a.id)}<small>${esc(dateLabel(a.createdAt))}</small><div class="q-actions">${talkButton('answer', a.id)}<button data-action="edit-answer" data-id="${esc(a.id)}">수정</button><button data-action="delete-record" data-type="answers" data-id="${esc(a.id)}">삭제</button></div></article>`;
+  return `<article class="talk-item ask-item" id="rec-${esc(a.id)}"><span class="status-tag">물음</span><p class="asked">${esc(a.prompt)}</p><p class="ask-text">${esc(a.text)}</p>${moreHtml(a.more)}${tagLine(a.id)}${linkedHtml(a.id)}<small>${esc(dateLabel(a.createdAt))}</small><div class="q-actions">${talkButton('answer', a.id)}<button data-action="edit-answer" data-id="${esc(a.id)}">수정</button><button data-action="delete-record" data-type="answers" data-id="${esc(a.id)}">삭제</button></div></article>`;
 }
 function renderTalks() {
   const name = state.profile.catName || '슬라임';
@@ -845,10 +866,11 @@ function renderTalk(id) {
 function memoryFor(c) {
   const { book } = talkSubject(c), skip = new Set([c.topic.ref]);
   const topicTags = new Set([...(state.readings[c.topic.ref]?.tags || []), ...(c.topic.kind === 'book' && book ? book.entries.flatMap(e => state.readings[e.id]?.tags || []) : [])]);
+  const linked = new Set(linkedOf(c.topic.ref).map(x => x.id));   // 내가 이 기록과 이어 둔 것은 맨 앞에, 그렇다고 알려서
   const items = [], add = (id, kind, text, at) => {
     if (!text || !text.trim() || skip.has(id)) return;
-    const score = (state.readings[id]?.tags || []).filter(t => topicTags.has(t)).length;
-    items.push({ kind, text: text.slice(0, 380), at: isIso(at) ? Date.parse(at) : 0, score });
+    const score = (state.readings[id]?.tags || []).filter(t => topicTags.has(t)).length + (linked.has(id) ? 10 : 0);
+    items.push({ kind: linked.has(id) ? `${kind} (지금 이야기하는 기록과 내가 이어 둔 것)` : kind, text: text.slice(0, 380), at: isIso(at) ? Date.parse(at) : 0, score });
   };
   const words = list => (list || []).map(m => m.text);
   for (const t of state.thoughts) add(t.id, '생각', [t.text, ...words(t.more)].join(' / 덧붙임: '), t.createdAt);
@@ -1123,6 +1145,8 @@ document.addEventListener('click', e => {
     case 'talk-quote': { if (ctxOpen) { ctxOpen = false; document.body.classList.remove('ctx-open'); $('[data-action=talk-ctx]')?.setAttribute('aria-pressed', 'false'); } const el = $('#talk-input'); if (el) { el.value = (el.value ? el.value.replace(/\s*$/, '\n') : '') + `“${btn.dataset.text}” `; el.dispatchEvent(new Event('input')); el.focus(); } break; }
     case 'talk-keep': talkKeep(route().id); break;
     case 'link-yes': answerLink(true); break;
+    case 'linked-go': { const x = linkPool().find(r => r.id === id); if (!x) break; if (route().page === 'talk') { talkFocus = true; startTalk(x.go.kind, x.id, x.go.book || ''); } else goRecord(x.go); break; }
+    case 'unlink': unlink(id, btn.dataset.other); break;
     case 'link-no': answerLink(false); break;
     case 'soft-kb': { try { localStorage.setItem('soft-kb', softKb() ? '0' : '1'); } catch {} renderTalk(route().id); $('#talk-input')?.focus(); notice(softKb() ? '화면 자판을 띄웁니다.' : '화면 자판을 숨깁니다. 블루투스 키보드로 적으세요.'); break; }
     case 'desk-book': case 'desk-thoughts': {   // 왼쪽 아래 책(또는 생각)을 고르면 그 갈래에서 마지막으로 이야기한 것을 엽니다
