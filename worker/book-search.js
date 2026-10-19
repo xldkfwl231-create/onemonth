@@ -7,6 +7,7 @@
  *
  * GET  /?q=독서의 기술   → 책 검색. [{ title, authors, publisher, cover, isbn }, ...]
  * POST /ai/tags          → 기록마다 주제어 1~3개와 짧은 요약. { items: [{ id, text }], known: [주제어], fresh?, name?, tone? } → { items: [{ id, tags, gist }], bite: 방금 먹인 기록(fresh)에 슬라임이 하는 한마디 }
+ * POST /ai/links         → 방금 먹인 기록과 뜻이 이어지는 예전 기록. { fresh: { id, text }, candidates: [{ id, date, text }] } → { items: [{ id, why }] } (0~2개)
  * POST /ai/titles        → 책 문장마다 짧은 제목. { book, items: [{ id, text }] } → { items: [{ id, title }] }
  * POST /ai/chat          → 슬라임과 이야기(토론). { name, tone, topic, memory: [{ date, kind, text }], messages: [{ role, text }] } → { reply }
  *                          memory = 이 사람이 앱에 남긴 것들 — 슬라임은 이걸 기억으로 삼아 이야기합니다
@@ -57,6 +58,12 @@ export default {
       if (!ALLOWED.includes(origin)) return json({ error: '허용되지 않은 주소입니다' }, 403);
       if (!env.ANTHROPIC_KEY) return json({ error: 'ANTHROPIC_KEY가 설정되지 않았습니다' }, 503);
       return chat(request, env, json);
+    }
+    if (path === '/ai/links') {
+      if (request.method !== 'POST') return json({ error: 'POST만 받습니다' }, 405);
+      if (!ALLOWED.includes(origin)) return json({ error: '허용되지 않은 주소입니다' }, 403);
+      if (!env.ANTHROPIC_KEY) return json({ error: 'ANTHROPIC_KEY가 설정되지 않았습니다' }, 503);
+      return linksFor(request, env, json);
     }
     if (path === '/ai/titles') {
       if (request.method !== 'POST') return json({ error: 'POST만 받습니다' }, 405);
@@ -160,6 +167,40 @@ async function tags(request, env, json) {
     .map(it => ({ id: it.id, tags: [...new Set(it.tags.filter(t => typeof t === 'string').map(t => t.trim()).filter(t => t && t.length <= 12))].slice(0, 3), gist: typeof it.gist === 'string' ? it.gist.replace(/["'“”‘’.。]/g, '').trim().slice(0, 30) : '' }));
   const bite = fresh && typeof out.bite === 'string' ? out.bite.trim().slice(0, 80) : '';
   return json({ items: result, bite, model: MODEL, usage: data.usage ? { input: data.usage.input_tokens, output: data.usage.output_tokens } : undefined });
+}
+
+// ── 이어 주기: 방금 먹인 기록과 뜻이 이어지는 예전 기록 찾기 ─────────────
+// 같은 낱말이 아니라 같은 고민 · 반대 생각 · 원인과 결과 · 같은 장면처럼 뜻으로 이어진 것만. 없으면 비워 둡니다.
+const MAX_LINK_CANDIDATES = 40;
+async function linksFor(request, env, json) {
+  let body;
+  try { body = await request.json(); } catch { return json({ error: '형식이 올바르지 않습니다' }, 400); }
+  const f = body?.fresh, cands = Array.isArray(body?.candidates) ? body.candidates : null;
+  if (typeof f?.id !== 'string' || f.id.length > 100 || typeof f?.text !== 'string' || !f.text.trim()) return json({ error: '방금 기록이 없습니다' }, 400);
+  if (!cands || !cands.length || cands.length > MAX_LINK_CANDIDATES) return json({ error: `예전 기록은 1~${MAX_LINK_CANDIDATES}개씩 보내 주세요` }, 400);
+  const clean = [];
+  for (const c of cands) {
+    if (typeof c?.id !== 'string' || c.id.length > 100 || c.id === f.id || typeof c?.text !== 'string' || !c.text.trim()) return json({ error: '예전 기록 형식이 올바르지 않습니다' }, 400);
+    clean.push({ id: c.id, date: typeof c.date === 'string' ? c.date.slice(0, 20) : '', text: c.text.slice(0, 300) });
+  }
+  const system = [
+    '당신은 한 사람이 자기 자신에 대해 적은 기록들 사이의 연결을 찾는 도우미입니다.',
+    '방금 적은 기록 하나와 예전 기록 목록을 받습니다. 방금 기록과 뜻으로 이어지는 예전 기록을 0~2개 고르세요.',
+    '이어진다는 것: 같은 고민이 다시 나옴, 반대되는 생각, 원인과 결과, 같은 장면이나 사람, 예전 질문에 대한 지금의 답.',
+    '같은 낱말이 나온다는 것만으로는 이어진 게 아닙니다. 확실하지 않으면 고르지 말고 비워 두세요.',
+    '고른 것마다 why: 어떻게 이어지는지 반말로 짧게(10~30글자). 평가나 조언은 쓰지 마세요. 예: 둘 다 혼자일 때 기운이 났다는 얘기',
+    'id는 받은 것 중에서만 고르세요.',
+  ].join('\n');
+  const user = JSON.stringify({ 방금_기록: f.text.slice(0, 600), 예전_기록: clean });
+  const schema = { type: 'object', properties: { items: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, why: { type: 'string' } }, required: ['id', 'why'], additionalProperties: false } } }, required: ['items'], additionalProperties: false };
+  const r = await askClaude(env, { system, user, schema, effort: 'low', maxTokens: 2000 });
+  if (r.error) return json({ error: r.error[0] }, r.error[1]);
+  const ids = new Set(clean.map(c => c.id)), seen = new Set();
+  const items = (Array.isArray(r.out?.items) ? r.out.items : [])
+    .filter(it => ids.has(it?.id) && !seen.has(it.id) && seen.add(it.id))
+    .slice(0, 2)
+    .map(it => ({ id: it.id, why: typeof it.why === 'string' ? it.why.trim().slice(0, 60) : '' }));
+  return json({ items, model: MODEL, usage: r.usage });
 }
 
 // ── 문장 제목: 이야기 목록에서 알아보기 쉽게, 책에서 옮겨 적은 문장마다 짧은 제목 ─────────

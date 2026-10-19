@@ -654,6 +654,7 @@ body[data-page=board] .shell{padding:0}
 .board-legend span{display:inline-flex;align-items:center;gap:4px}
 .board-legend i,.board-kind i,.board-row i{display:inline-block;width:10px;height:10px;border-radius:50%}
 .board-legend i.ring{background:transparent;border:2px solid #3f8a52}
+.board-legend i.linked{width:14px;height:3px;border-radius:2px;background:rgba(255,122,89,.8)}
 .board-note{position:absolute;left:16px;right:16px;top:calc(96px + env(safe-area-inset-top));margin:0 auto;max-width:440px;padding:8px 14px;background:var(--surface);border:2px dashed var(--line);border-radius:14px;font-size:12.5px;color:var(--muted);text-align:center}
 .board-empty{position:absolute;inset:120px 16px auto}
 .board-card{position:absolute;left:12px;right:12px;bottom:calc(92px + env(safe-area-inset-bottom));max-height:46vh;overflow:auto;margin:0 auto;max-width:520px;padding:14px 16px 12px;background:var(--surface);border:3px solid var(--line);border-radius:var(--r);box-shadow:0 6px 0 var(--line),0 14px 34px rgba(74,60,49,.16)}
@@ -759,3 +760,7 @@ button.sum-change:active{transform:none}
 /* ── 슬라임 말풍선: 기록을 꺼낼 때는 눌러서 그 기록으로 ── */
 .slime-say.go{pointer-events:auto;cursor:pointer}
 .slime-say.go:active{transform:translate(-50%,2px)}
+
+/* ── 이어 주기: 슬라임의 제안 말풍선 ── */
+.link-bubble .bubble-text{font-size:16.5px}
+.link-bubble .bubble-text small{display:block;margin-top:6px;font:400 13px/1.5 var(--body);color:var(--muted)}

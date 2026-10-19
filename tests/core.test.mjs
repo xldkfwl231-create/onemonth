@@ -145,3 +145,15 @@ test('sentence titles survive a backup round trip and bad ones are dropped', () 
   assert.deepEqual(back.titles, { e1: { t: '고슴도치 찾기', h: '123' } });
   assert.deepEqual(normalize({ version: 2, books: [], thoughts: [] }).titles, {});   // 예전 백업에는 없음
 });
+test('links: kept through backup, bad ones dropped, and drawn on the map only when both records exist and not refused', () => {
+  const s = emptyState();
+  s.thoughts = [{ id: 't1', text: '혼자 걷는 출근길', more: [], createdAt: '2026-10-01T00:00:00Z' }, { id: 't2', text: '혼자 있을 때 기운', more: [], createdAt: '2026-10-02T00:00:00Z' }, { id: 't3', text: '회의', more: [], createdAt: '2026-10-03T00:00:00Z' }];
+  s.links = [{ a: 't1', b: 't2', at: '2026-10-02T00:00:00Z', why: '둘 다 혼자' }, { a: 't1', b: 't3', no: true }, { a: 't1', b: 'gone' }, { a: 't1', b: 't1' }, { a: 5, b: 't2' }];
+  const back = normalize(JSON.parse(backup(s)).data);
+  assert.equal(back.links.length, 3);
+  assert.deepEqual(back.links[0], { a: 't1', b: 't2', at: '2026-10-02T00:00:00Z', why: '둘 다 혼자' });
+  assert.equal(back.links[1].no, true);
+  const drawn = boardGraph(back).links.filter(l => l.kind === 'link');
+  assert.deepEqual(drawn, [{ s: 't1', t: 't2', kind: 'link' }]);
+  assert.deepEqual(normalize({ version: 2, books: [], thoughts: [] }).links, []);
+});

@@ -152,3 +152,18 @@ test('tags: short gist per record, and a bite for the record just fed', async ()
   await call({ items: [{ id: 'a', text: 'x' }], fresh: 'zzz' });
   assert.match(body.system, /bite는 빈 문자열/);
 });
+
+test('links: up to two known, distinct records with a short why', async () => {
+  let body;
+  fakeAI({ stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify({ items: [{ id: 'b', why: ' 둘 다 혼자일 때 기운이 났다는 얘기 ' }, { id: 'b', why: '중복' }, { id: 'zzz', why: '모르는 것' }, { id: 'c', why: '' }, { id: 'd', why: '셋째' }] }) }], usage: { input_tokens: 80, output_tokens: 20 } },
+    (url, init) => { body = JSON.parse(init.body); });
+  const res = await call({ fresh: { id: 'a', text: '혼자 산책할 때 기운이 난다' }, candidates: [{ id: 'b', date: '10월 3일', text: '생각: 혼자 걷는 출근길이 좋았다' }, { id: 'c', text: '메모: 회의 뒤 피곤' }, { id: 'd', text: '질문: 왜 혼자일 때' }] }, { path: '/ai/links' });
+  assert.equal(res.status, 200);
+  const out = await res.json();
+  assert.deepEqual(out.items, [{ id: 'b', why: '둘 다 혼자일 때 기운이 났다는 얘기' }, { id: 'c', why: '' }]);
+  assert.match(body.messages[0].content, /혼자 산책할 때/);
+  assert.match(body.system, /같은 낱말이 나온다는 것만으로는/);
+  assert.equal((await call({ fresh: { id: 'a', text: 'x' }, candidates: [] }, { path: '/ai/links' })).status, 400);
+  assert.equal((await call({ fresh: { id: 'a', text: 'x' }, candidates: [{ id: 'a', text: '자기 자신' }] }, { path: '/ai/links' })).status, 400);
+  assert.equal((await call({ fresh: { id: 'a', text: 'x' }, candidates: [{ id: 'b', text: 'y' }] }, { path: '/ai/links', origin: 'https://evil.example' })).status, 403);
+});
