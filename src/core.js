@@ -170,6 +170,21 @@ export function boardGraph(s) {
   return { nodes, links };
 }
 
+// 한 기록 주변만 (옵시디언의 로컬 그래프처럼): 바로 이어진 것, 내가 이어 둔 기록이 또 이어 둔 것,
+// 주제어 · 책으로 이어졌으면 그 주제어 · 책의 다른 기록 몇 개(최근 것부터). 주제어 · 책을 가운데 두면 거기 달린 기록과 그 기록이 이어 둔 것.
+export function localGraph(g, center, more = 6) {
+  const byId = new Map(g.nodes.map(n => [n.id, n])); if (!byId.has(center)) return { nodes: [], links: [] };
+  const hub = n => n.kind === 'tag' || n.kind === 'book';
+  const nb = id => g.links.filter(l => l.s === id || l.t === id).map(l => ({ id: l.s === id ? l.t : l.s, kind: l.kind }));
+  const keep = new Set([center]);
+  for (const { id } of nb(center)) {
+    keep.add(id);
+    if (hub(byId.get(id))) nb(id).map(x => byId.get(x.id)).filter(x => x && !hub(x) && x.id !== center).sort((a, b) => (Date.parse(b.at) || 0) - (Date.parse(a.at) || 0)).slice(0, more).forEach(x => keep.add(x.id));
+    else for (const x of nb(id)) if (x.kind === 'link') keep.add(x.id);
+  }
+  return { nodes: g.nodes.filter(n => keep.has(n.id)), links: g.links.filter(l => keep.has(l.s) && keep.has(l.t)) };
+}
+
 // 슬라임이 본 나 — AI 없이 기록에서 바로 셉니다. 달마다 많이 나온 주제어, 새로 생긴 · 뜸해진 주제어,
 // 오래 품은 질문, 그땐 → 지금은으로 바뀐 답, 가장 많이 이야기한 기록.
 export function seenSelf(s, today = new Date()) {

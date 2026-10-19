@@ -780,3 +780,5 @@ button.sum-change:active{transform:none}
 .linked-del{flex:0 0 auto;width:30px;min-height:0;padding:0;border:0;background:transparent;box-shadow:none;color:var(--muted);font-size:16px}
 .linked-del:hover{color:var(--danger)}
 .talk-topic .linked{margin-top:6px}
+.board-row.mine{border-color:rgba(255,122,89,.75);border-left-width:4px}
+.board-top button.back{min-height:0;font:inherit}

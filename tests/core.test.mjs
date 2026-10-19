@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalize, backup, matchesBook, dateLabel, dayKey, safeCover, emptyState, nextQuestion, dayOf, boardGraph, seenSelf } from '../src/core.js';
+import { normalize, backup, matchesBook, dateLabel, dayKey, safeCover, emptyState, nextQuestion, dayOf, boardGraph, localGraph, seenSelf } from '../src/core.js';
 const old = () => ({books:[{t:'독서의 기술',s:'8/1',e:[{l:'오래 남은 문장',d:'8/2'}]}],thoughts:[{t:'생각',d:'8/3'}],trips:[{p:'통영',n:'바다'}],cur:0});
 test('legacy migration preserves every record, original dates and original input',() => {
   const input = old(), copy = structuredClone(input), s = normalize(input);
@@ -156,4 +156,16 @@ test('links: kept through backup, bad ones dropped, and drawn on the map only wh
   const drawn = boardGraph(back).links.filter(l => l.kind === 'link');
   assert.deepEqual(drawn, [{ s: 't1', t: 't2', kind: 'link' }]);
   assert.deepEqual(normalize({ version: 2, books: [], thoughts: [] }).links, []);
+});
+test('local graph: neighbours, what my links link to, and a few recent records through a tag', () => {
+  const s = emptyState(), at = d => `2026-10-${String(d).padStart(2, '0')}T00:00:00Z`;
+  s.thoughts = Array.from({ length: 10 }, (_, i) => ({ id: 't' + i, text: '생각 ' + i, more: [], createdAt: at(i + 1) }));
+  s.readings = { t0: { tags: ['산책'] }, t1: { tags: ['산책'] }, t2: { tags: ['산책'] }, t3: { tags: ['산책'] }, t9: { tags: ['회의'] } };
+  s.links = [{ a: 't0', b: 't5' }, { a: 't5', b: 't6' }, { a: 't6', b: 't7' }, { a: 't0', b: 't8', no: true }];
+  const g = boardGraph(s), ids = c => localGraph(g, c, 2).nodes.map(n => n.id).sort();
+  // t0 → 주제어 #산책(그 주제어의 최근 기록 2개: t3, t2), 이어 둔 t5, t5가 이어 둔 t6. t7은 세 다리, t8은 '아니야', t9는 다른 주제어
+  assert.deepEqual(ids('t0'), ['t0', 't2', 't3', 't5', 't6', 'tag:산책']);
+  assert.ok(localGraph(g, 't0', 2).links.every(l => ids('t0').includes(l.s) && ids('t0').includes(l.t)));
+  assert.deepEqual(ids('tag:산책'), ['t0', 't1', 't2', 't3', 't5', 'tag:산책']);   // 주제어 가운데: 달린 기록과 그 기록이 이어 둔 것
+  assert.deepEqual(localGraph(g, 'nope'), { nodes: [], links: [] });
 });

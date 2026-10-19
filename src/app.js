@@ -1,10 +1,10 @@
-import { uid, now, emptyState, normalize, backup, stats, matchesBook, dateLabel, safeCover, emptyUsage, dayOf, isIso, boardGraph, seenSelf } from './core.js';
+import { uid, now, emptyState, normalize, backup, stats, matchesBook, dateLabel, safeCover, emptyUsage, dayOf, isIso, boardGraph, localGraph, seenSelf } from './core.js';
 import { mountSlime } from './slime.js';
 import { mountBoard, BOARD_COLORS } from './board.js';
 import { openStore, load, commit, previous } from './storage.js';
 import { BOOK_SEARCH_ENDPOINT, AI_ENDPOINT, AI_SUMMARY_ENDPOINT, AI_CHAT_ENDPOINT, AI_TITLES_ENDPOINT, AI_LINKS_ENDPOINT } from './config.js';
 
-const BUILD = '1019b';   // 폰에서 어떤 판을 보고 있는지 확인용
+const BUILD = '1019c';   // 폰에서 어떤 판을 보고 있는지 확인용
 const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 // 이름 뒤 조사 — 받침이 있으면 이/과, 없으면 가/와 (뚱이가, 말랑이)
@@ -53,6 +53,7 @@ function render() {
   const raw = route().page, page = ['cat', 'room', 'moments', 'trips', 'day'].includes(raw) ? 'home' : raw;   // 옛 주소는 첫 화면으로
   if (slime && page !== 'home') { slime.destroy(); slime = null; }
   if (board && page !== 'board') { board.destroy(); board = null; }
+  if (page !== 'board') boardLocal = '';
   if (page !== 'home') document.body.classList.remove('night');
   const tab = { board:'home', book:'shelf', questions:'shelf', shelf:'shelf', thoughts:'thoughts', me:'me', answers:'talk', talk:'talk' }[page] || 'home';
   document.querySelectorAll('[data-nav]').forEach(a => { if (a.dataset.nav === tab) a.setAttribute('aria-current','page'); else a.removeAttribute('aria-current'); });
@@ -390,29 +391,36 @@ function boardCardHtml(n) {
   if (!n) return '';
   const name = state.profile.catName || '슬라임', kindName = { entry: '문장', question: '질문', thought: '생각', answer: '물음에 한 답', tag: '주제어', book: '책' }[n.kind];
   const g = boardGraph(state), linked = new Set(g.links.filter(l => l.s === n.id || l.t === n.id).map(l => l.s === n.id ? l.t : l.s));
-  const pick = x => `<button class="board-row" data-action="board-pick" data-id="${esc(x.id)}"><i style="background:${BOARD_COLORS[x.kind]}"></i><span>${esc(x.kind === 'tag' ? '#' + x.label : cutN(x.label, 60))}</span></button>`;
+  const mine = new Set(g.links.filter(l => l.kind === 'link' && (l.s === n.id || l.t === n.id)).map(l => l.s === n.id ? l.t : l.s));   // 내가 이어 둔 것
+  const local = boardLocal === n.id ? '' : `<button class="quiet" data-action="board-local" data-id="${esc(n.id)}">이어진 것만 보기</button>`;
+  const pick = x => `<button class="board-row ${mine.has(x.id) ? 'mine' : ''}" data-action="board-pick" data-id="${esc(x.id)}"><i style="background:${BOARD_COLORS[x.kind]}"></i><span>${esc(x.kind === 'tag' ? '#' + x.label : cutN(x.label, 60))}</span></button>`;
   const rel = g.nodes.filter(x => linked.has(x.id));
-  if (n.kind === 'tag') return `<p class="board-kind"><i style="background:${BOARD_COLORS.tag}"></i>주제어</p><h2>#${esc(n.label)}</h2><p class="hint">이 주제어가 붙은 기록 ${rel.length}개</p><div class="board-list">${rel.map(pick).join('')}</div>`;
-  if (n.kind === 'book') { const b = state.books.find(x => x.id === n.ref); return `<p class="board-kind"><i style="background:${BOARD_COLORS.book}"></i>책</p><h2>『${esc(n.label)}』</h2><p class="hint">문장 ${b?.entries.length || 0} · 질문 ${b?.questions.length || 0}</p><div class="board-actions">${b ? talkButton('book', b.id) : ''}<a class="text-link" href="#book/${esc(n.ref)}">책 열기 ›</a></div><div class="board-list">${rel.map(pick).join('')}</div>`; }
+  if (n.kind === 'tag') return `<p class="board-kind"><i style="background:${BOARD_COLORS.tag}"></i>주제어</p><h2>#${esc(n.label)}</h2><p class="hint">이 주제어가 붙은 기록 ${rel.length}개</p>${local ? `<div class="board-actions">${local}</div>` : ''}<div class="board-list">${rel.map(pick).join('')}</div>`;
+  if (n.kind === 'book') { const b = state.books.find(x => x.id === n.ref); return `<p class="board-kind"><i style="background:${BOARD_COLORS.book}"></i>책</p><h2>『${esc(n.label)}』</h2><p class="hint">문장 ${b?.entries.length || 0} · 질문 ${b?.questions.length || 0}</p><div class="board-actions">${b ? talkButton('book', b.id) : ''}${local}<a class="text-link" href="#book/${esc(n.ref)}">책 열기 ›</a></div><div class="board-list">${rel.map(pick).join('')}</div>`; }
   const b = n.book && state.books.find(x => x.id === n.book), talkKindOf = { entry: 'entry', question: 'question', thought: 'thought', answer: 'answer' }[n.kind];
   return `<p class="board-kind"><i style="background:${BOARD_COLORS[n.kind]}"></i>${kindName}${b ? ` · 『${esc(b.title)}』` : ''} · ${esc(dateLabel(n.at))}</p>${n.prompt ? `<p class="hint">${esc(ig(name))} 물었던 것: ${esc(n.prompt)}</p>` : ''}<p class="board-text">${esc(n.label)}</p>
-    <div class="board-actions">${talkButton(talkKindOf, n.id, n.book || '')}<button class="quiet" data-action="board-open" data-kind="${n.kind}" data-id="${esc(n.id)}" data-book="${esc(n.book || '')}">기록 보기</button></div>
+    <div class="board-actions">${talkButton(talkKindOf, n.id, n.book || '')}<button class="quiet" data-action="board-open" data-kind="${n.kind}" data-id="${esc(n.id)}" data-book="${esc(n.book || '')}">기록 보기</button>${local}</div>
     ${rel.length ? `<p class="hint">이어진 것</p><div class="board-list">${rel.map(pick).join('')}</div>` : `<p class="hint">아직 이어진 주제어가 없어요.${state.profile.aiConsentAt ? ' 슬라임이 읽으면 이어집니다.' : ''}</p>`}`;
 }
+// boardLocal: 한 기록 주변만 볼 때 그 기록 id (지도를 떠나면 비움)
 function renderBoard() {
-  const g = boardGraph(state), tagged = g.nodes.some(n => n.kind === 'tag');
+  if (board) { board.destroy(); board = null; }
+  const all = boardGraph(state), tagged = all.nodes.some(n => n.kind === 'tag');
+  let g = all, center = null;
+  if (boardLocal) { g = localGraph(all, boardLocal); center = g.nodes.find(n => n.id === boardLocal); if (!center) { boardLocal = ''; g = all; } }
+  const title = center ? `${center.kind === 'tag' ? '#' + center.label : cutN(center.label, 9)} 주변` : '기록 지도';
   const legend = [['entry', '문장'], ['question', '질문'], ['thought', '생각'], ...(state.answers.length ? [['answer', '답']] : []), ['tag', '주제어'], ['book', '책']];
   $('#main').innerHTML = `<section class="board" aria-label="기록 지도">
     <canvas id="board-canvas" role="img" aria-label="기록 ${g.nodes.filter(n => !['tag', 'book'].includes(n.kind)).length}개가 주제어와 책으로 이어진 지도. 점을 누르면 아래에 그 기록이 나옵니다."></canvas>
-    <div class="board-top"><a class="back" href="#home">← 슬라임</a><h1>기록 지도</h1><button class="tool" data-action="board-fit" aria-label="전체 보기" title="전체 보기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>
+    <div class="board-top">${center ? '<button class="back" data-action="board-all">← 전체 지도</button>' : '<a class="back" href="#home">← 슬라임</a>'}<h1>${esc(title)}</h1><button class="tool" data-action="board-fit" aria-label="전체 보기" title="전체 보기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>
     <p class="board-legend">${legend.map(([k, l]) => `<span><i style="background:${BOARD_COLORS[k]}"></i>${l}</span>`).join('')}<span><i class="ring"></i>이야기함</span>${(state.links || []).some(l => !l.no) ? '<span><i class="linked"></i>이어 둠</span>' : ''}</p>
     ${!g.nodes.length ? `<div class="board-empty">${empty('아직 펼칠 기록이 없어요', '생각을 먹이거나 책에 문장을 남기면 여기 점으로 생겨요.')}</div>` : !tagged ? `<p class="board-note">${state.profile.aiConsentAt ? '슬라임이 기록을 읽는 중이에요. 주제어가 붙으면 기록끼리 이어집니다.' : '나 → <b>슬라임이 기록 읽기</b>를 켜면 기록이 주제어로 이어져요. 지금은 책끼리만 이어져 있어요.'}</p>` : ''}
     <aside class="board-card" id="board-card" hidden aria-live="polite"></aside>
   </section>`;
-  board = mountBoard($('#board-canvas'), { nodes: g.nodes, links: g.links, reduced: matchMedia('(prefers-reduced-motion: reduce)').matches,
+  board = mountBoard($('#board-canvas'), { nodes: g.nodes, links: g.links, mark: center?.id || '', reduced: matchMedia('(prefers-reduced-motion: reduce)').matches,
     onSelect: n => { const card = $('#board-card'); if (!card) return; card.hidden = !n; card.innerHTML = n ? `<button class="quiet card-close" data-action="board-close" aria-label="닫기">✕</button>${boardCardHtml(n)}` : ''; } });
   $('#board-canvas').__board = board;   // 확인용
-  if (boardFocus) { const f = boardFocus; boardFocus = ''; setTimeout(() => board?.select(f), 900); }
+  if (!center && boardFocus) { const f = boardFocus; boardFocus = ''; setTimeout(() => board?.select(f), 900); }
 }
 function renderShelf() {
   $('#main').innerHTML = `<section aria-labelledby="shelf-title"><div class="intro"><div><h1 id="shelf-title">나의 책장</h1><p>읽다가 머문 자리마다, 나만의 기록이 쌓입니다. <a class="text-link" href="#questions">답을 기다리는 질문 ${state.books.reduce((n, b) => n + b.questions.filter(q => !q.answer).length, 0)} ›</a></p></div><button class="primary intro-actions" data-action="add-book">＋ 책 추가</button></div><div class="toolbar"><div class="filters" aria-label="독서 상태">${[['all','전체'],['reading','읽는 중'],['finished','다 읽음']].map(([v,l]) => `<button data-filter="${v}" aria-pressed="${filter === v}">${l}</button>`).join('')}</div><div class="search-field"><label class="visually-hidden" for="local-search">책과 기록 검색</label><input type="search" id="local-search" placeholder="책 제목, 문장, 질문 찾기" value="${esc(query)}"></div></div><div id="shelf-results"></div></section>`;
@@ -1003,7 +1011,7 @@ function usageBlock() {
     <button class="quiet" data-action="usage-reset">0부터 다시 세기</button>`;
 }
 // ── 슬라임이 본 나 ── 기록에서 바로 센 것. 주제어를 누르면 기록 지도에서 그 주제어를 펼칩니다.
-let boardFocus = '';
+let boardFocus = '', boardLocal = '';
 function seenHtml() {
   const r = seenSelf(state), name = state.profile.catName || '슬라임';
   if (r.total < 3) return `<section class="me-card seen"><h2>${esc(ig(name))} 본 나</h2><p class="hint">기록이 조금 더 쌓이면 여기서 내가 요즘 어디에 머무는지 보여 줄게요. 생각을 먹이고, 책에 메모를 남겨 보세요.</p></section>`;
@@ -1136,6 +1144,8 @@ document.addEventListener('click', e => {
     case 'board-pick': board?.select(btn.dataset.id); break;
     case 'board-close': board?.select(null); $('#board-card').hidden = true; break;
     case 'board-fit': board?.fit(); break;
+    case 'board-local': boardLocal = id; renderBoard(); break;
+    case 'board-all': { const was = boardLocal; boardLocal = ''; renderBoard(); setTimeout(() => board?.select(was), 900); break; }
     case 'board-open': { const { kind } = btn.dataset; focusRec = id; if (kind === 'thought') location.hash = 'thoughts'; else if (kind === 'answer') { talkFilter = 'ask'; location.hash = 'talk'; } else { entryTab = kind === 'question' ? 'questions' : 'entries'; location.hash = `book/${book}`; } break; }
     case 'talk-book': { const b = currentBook() || state.books.find(x => x.id === id); if (b) { talkFocus = true; startTalk('book', b.id); } break; }
     case 'talk-thought': talkFocus = true; startTalk('thought', id); break;
