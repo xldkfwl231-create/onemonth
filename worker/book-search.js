@@ -7,9 +7,10 @@
  *
  * GET  /?q=독서의 기술   → 책 검색. [{ title, authors, publisher, cover, isbn }, ...]
  * POST /ai/tags          → 기록마다 주제어 1~3개와 짧은 요약. { items: [{ id, text }], known: [주제어], fresh?, name?, tone? } → { items: [{ id, tags, gist }], bite: 방금 먹인 기록(fresh)에 슬라임이 하는 한마디 }
+ * POST /ai/know          → 슬라임이 아는 나: 예전 메모 + 새 기록으로 나에 대한 메모를 고쳐 씀. { items: [{ cat, text, src }], records: [{ id, date, kind, text }], removed: [text] } → { items: [{ cat, text, src: [id] }] }
  * POST /ai/links         → 방금 먹인 기록과 뜻이 이어지는 예전 기록. { fresh: { id, text }, candidates: [{ id, date, text }] } → { items: [{ id, why }] } (0~2개)
  * POST /ai/titles        → 책 문장마다 짧은 제목. { book, items: [{ id, text }] } → { items: [{ id, title }] }
- * POST /ai/chat          → 슬라임과 이야기(토론). { name, tone, topic, memory: [{ date, kind, text }], messages: [{ role, text }] } → { reply }
+ * POST /ai/chat          → 슬라임과 이야기. { name, tone, topic, profile: [{ cat, text }], messages: [{ role, text }] } → { reply }
  *                          memory = 이 사람이 앱에 남긴 것들 — 슬라임은 이걸 기억으로 삼아 이야기합니다
  * POST /ai/summary       → 책 한 권 정리. { name, tone, book, entries: [{ id, page, note, more, talk }], questions: [{ id, text, answer, history, talk }], talk }
  *                          → { line, held: [{ id, why }], open: [{ id, why }], changed: [{ id, then, now }] }  (책에서 옮겨 적은 문장은 받지 않음)
@@ -58,6 +59,12 @@ export default {
       if (!ALLOWED.includes(origin)) return json({ error: '허용되지 않은 주소입니다' }, 403);
       if (!env.ANTHROPIC_KEY) return json({ error: 'ANTHROPIC_KEY가 설정되지 않았습니다' }, 503);
       return chat(request, env, json);
+    }
+    if (path === '/ai/know') {
+      if (request.method !== 'POST') return json({ error: 'POST만 받습니다' }, 405);
+      if (!ALLOWED.includes(origin)) return json({ error: '허용되지 않은 주소입니다' }, 403);
+      if (!env.ANTHROPIC_KEY) return json({ error: 'ANTHROPIC_KEY가 설정되지 않았습니다' }, 503);
+      return know(request, env, json);
     }
     if (path === '/ai/links') {
       if (request.method !== 'POST') return json({ error: 'POST만 받습니다' }, 405);
@@ -167,6 +174,44 @@ async function tags(request, env, json) {
     .map(it => ({ id: it.id, tags: [...new Set(it.tags.filter(t => typeof t === 'string').map(t => t.trim()).filter(t => t && t.length <= 12))].slice(0, 3), gist: typeof it.gist === 'string' ? it.gist.replace(/["'“”‘’.。]/g, '').trim().slice(0, 30) : '' }));
   const bite = fresh && typeof out.bite === 'string' ? out.bite.trim().slice(0, 80) : '';
   return json({ items: result, bite, model: MODEL, usage: data.usage ? { input: data.usage.input_tokens, output: data.usage.output_tokens } : undefined });
+}
+
+// ── 슬라임이 아는 나: 기록에서 나에 대한 메모를 뒤에서 정리 ─────────────
+// 대화에서는 이 메모만 배경으로 씁니다(기록 원문 대신). 나 탭에서 보고, 틀린 건 지울 수 있습니다(removed: 다시 쓰지 말 것).
+const KNOW_CATS = ['관심사', '고민', '기준', '요즘', '바뀐 생각'], MAX_KNOW = 30, MAX_KNOW_RECORDS = 80;
+async function know(request, env, json) {
+  let body;
+  try { body = await request.json(); } catch { return json({ error: '형식이 올바르지 않습니다' }, 400); }
+  const recs = Array.isArray(body?.records) ? body.records : null;
+  if (!recs || recs.length > MAX_KNOW_RECORDS) return json({ error: `기록은 0~${MAX_KNOW_RECORDS}개씩 보내 주세요` }, 400);
+  const str = (v, n) => typeof v === 'string' ? v.slice(0, n) : '';
+  const records = recs.filter(r => typeof r?.id === 'string' && r.id.length <= 100 && typeof r.text === 'string' && r.text.trim()).map(r => ({ id: r.id, date: str(r.date, 20), kind: str(r.kind, 30), text: r.text.slice(0, 400) }));
+  const prev = (Array.isArray(body.items) ? body.items : []).slice(0, MAX_KNOW).filter(k => typeof k?.text === 'string' && k.text.trim())
+    .map(k => ({ cat: KNOW_CATS.includes(k.cat) ? k.cat : '요즘', text: k.text.slice(0, 120), src: (Array.isArray(k.src) ? k.src : []).filter(x => typeof x === 'string' && x.length <= 100).slice(0, 5) }));
+  const removed = (Array.isArray(body.removed) ? body.removed : []).filter(x => typeof x === 'string').slice(-50).map(x => x.slice(0, 120));
+  if (!records.length && !prev.length) return json({ error: '정리할 기록이 없습니다' }, 400);
+  const system = [
+    '당신은 한 사람이 자기 앱에 남긴 기록(생각, 책에 단 메모, 질문과 답, 대화에서 한 말)을 읽고, 이 사람에 대한 메모를 정리하는 도우미입니다.',
+    '이 메모는 나중에 이 사람과 대화하는 AI가 배경으로 쓰고, 이 사람도 직접 읽습니다.',
+    '규칙:',
+    `- 갈래(cat)는 ${KNOW_CATS.map(c => `"${c}"`).join(', ')} 가운데 하나. 관심사: 자주 다루는 것 · 고민: 되풀이되는 걱정이나 풀고 싶은 문제 · 기준: 판단할 때 쓰는 가치나 원칙 · 요즘: 지금 처한 상황 · 바뀐 생각: 예전과 달라진 생각(그땐 → 지금은).`,
+    '- 항목마다 한 줄(text), 15~60글자. "~함", "~임", "~에 관심"처럼 짧게 맺으세요. 예: 정해진 길이 있으면 오히려 편하다고 느낌',
+    '- 기록에 실제로 나온 것만. 짐작해서 성격을 진단하거나 평가하지 마세요. 예: 게으름, 불안형, 내향적 같은 말 금지.',
+    '- src: 그 항목의 근거가 된 기록 id 1~3개(받은 기록이나 예전 메모의 src에서만).',
+    '- 예전 메모가 있으면 그것을 바탕으로 고쳐 쓰세요. 새 기록으로 달라진 건 고치고, 여전히 맞는 건 두고, 겹치는 건 합치세요.',
+    '- "지운 것" 목록에 있는 내용은 다시 쓰지 마세요. 이 사람이 틀렸다고 지운 것입니다.',
+    `- 모두 합쳐 ${MAX_KNOW}개 이하. 중요한 것부터.`,
+  ].join('\n');
+  const user = JSON.stringify({ 예전_메모: prev, 새_기록: records, 지운_것: removed });
+  const schema = { type: 'object', properties: { items: { type: 'array', items: { type: 'object', properties: { cat: { type: 'string' }, text: { type: 'string' }, src: { type: 'array', items: { type: 'string' } } }, required: ['cat', 'text', 'src'], additionalProperties: false } } }, required: ['items'], additionalProperties: false };
+  const r = await askClaude(env, { system, user, schema, effort: 'medium', maxTokens: 6000 });
+  if (r.error) return json({ error: r.error[0] }, r.error[1]);
+  const ids = new Set([...records.map(x => x.id), ...prev.flatMap(k => k.src)]), gone = new Set(removed.map(x => x.trim()));
+  const items = (Array.isArray(r.out?.items) ? r.out.items : [])
+    .filter(k => typeof k?.text === 'string' && k.text.trim() && !gone.has(k.text.trim()))
+    .slice(0, MAX_KNOW)
+    .map(k => ({ cat: KNOW_CATS.includes(k.cat) ? k.cat : '요즘', text: k.text.trim().slice(0, 80), src: [...new Set((Array.isArray(k.src) ? k.src : []).filter(x => ids.has(x)))].slice(0, 3) }));
+  return json({ items, model: MODEL, usage: r.usage });
 }
 
 // ── 이어 주기: 방금 먹인 기록과 뜻이 이어지는 예전 기록 찾기 ─────────────
@@ -318,7 +363,7 @@ async function summary(request, env, json) {
 }
 
 // ── 슬라임과 이야기 (토론) ──────────────────────────────────────
-const MAX_TURNS = 40, MAX_TURN_TEXT = 1500, MAX_MEMORY = 60, MAX_MEMORY_TEXT = 400;
+const MAX_TURNS = 40, MAX_TURN_TEXT = 1500, MAX_PROFILE = 40;
 async function chat(request, env, json) {
   let body;
   try { body = await request.json(); } catch { return json({ error: '형식이 올바르지 않습니다' }, 400); }
@@ -343,46 +388,36 @@ async function chat(request, env, json) {
     author: typeof t.author === 'string' ? t.author.slice(0, 100) : '',
     notes: (Array.isArray(t.notes) ? t.notes : []).filter(n => typeof n === 'string').slice(0, 20).map(n => n.slice(0, 400)),
   };
-  // 기억 — 이 사람이 이 앱에 남긴 것들 (오래된 것부터). 슬라임은 이걸 바탕으로 이어 말합니다.
-  const memory = (Array.isArray(body.memory) ? body.memory : []).slice(-MAX_MEMORY)
-    .filter(m => typeof m?.text === 'string' && m.text.trim())
-    .map(m => `- ${typeof m.date === 'string' && m.date ? `[${m.date.slice(0, 20)}] ` : ''}${typeof m.kind === 'string' ? m.kind.slice(0, 40) + ': ' : ''}${m.text.slice(0, MAX_MEMORY_TEXT).replace(/\s+/g, ' ')}`);
+  // 이 사람에 대해 알고 있는 것 — 앱이 기록에서 미리 정리해 둔 메모(나 탭의 '슬라임이 아는 나'). 배경으로만 씁니다.
+  const known = (Array.isArray(body.profile) ? body.profile : []).slice(0, MAX_PROFILE)
+    .filter(k => typeof k?.text === 'string' && k.text.trim())
+    .map(k => `- ${typeof k.cat === 'string' && k.cat ? k.cat.slice(0, 20) + ': ' : ''}${k.text.slice(0, 200).replace(/\s+/g, ' ')}`);
   const about = topic.kind === 'book' ? `책 『${topic.title}』${topic.author ? `(${topic.author})` : ''}` : topic.kind === 'thought' ? '이 사람이 적어 둔 생각 하나' : '이 사람이 꺼내는 이야기';
   const system = [
-    `당신은 "${name}"라는 이름의 작은 슬라임입니다. 이 사람이 적는 기록을 오래 지켜봐 온 친구이고, 지금은 ${about}에 대해 함께 이야기합니다.`,
+    `당신은 "${name}"라는 이름의 작은 슬라임이고, 이 사람과 편하게 이야기하는 대화 상대입니다. 지금은 ${about}에 대해 이야기합니다.`,
     '',
     '대화 방식:',
-    '- 당신은 맞장구 상대가 아니라 생각을 함께 밀고 나가는 상대입니다. 이 사람이 스스로 미처 못 본 쪽을 보여 주는 것이 당신의 일입니다.',
-    '- 답마다 실제로 보태는 것을 꼭 하나 넣으세요. 아래 가운데 지금 말에 가장 쓸모 있는 하나를 고릅니다.',
-    '  반대쪽 생각: 이 사람의 결론과 다르게 볼 근거',
-    '  숨은 전제: 이 말이 당연하게 깔고 있는 가정',
-    '  구체적인 예: 막연한 말을 실제 장면으로',
-    '  그땐과 지금: 기억 속 예전 말과 지금 말이 어긋나는 곳',
-    '  책의 관점: 이 책이나 널리 알려진 생각이 이 문제를 보는 방식 (확실히 아는 것만)',
-    '- "맞아", "좋은 생각이야", "그럴 수 있어", "충분히 이해해"처럼 빈 동의로 시작하지 마세요. 정말 동의하면 왜 동의하는지 이유를 대고, 그다음 한 걸음 더 나가세요.',
-    '- 이 사람의 말을 그대로 되풀이하거나 다른 말로 바꿔 돌려주지 마세요.',
-    '- 생각과 의견에는 솔직하게 반대해도 됩니다. 하지만 이 사람 자체를 평가하거나 진단하지는 마세요. ("너는 ~한 사람이야" 금지)',
-    '- 짧게. 2~3문장, 문장마다 짧게. 다 합쳐 150자 안쪽. 보태는 것은 하나만. 다정하지만 무르지 않은 반말.',
-    tone === 'we' ? '- 당신과 이 사람은 하나라서 이 사람을 "우리"라고 부르기도 합니다. 그래도 한 마음 안에 여러 목소리가 있듯, 당신은 우리 안의 다른 쪽 목소리입니다. 하나라는 이유로 동의하지 마세요.' : '- 이 사람을 "너"라고 부르세요.',
-    '- 질문하는 사람은 이 사람입니다. 되묻지 말고 물음표로 끝내지 마세요. "궁금해", "어때?", "왜일까?"처럼 되묻는 말도 하지 마세요.',
-    '- 이 사람이 한 말의 뜻을 정말 알 수 없을 때만 짧게 확인해도 됩니다.',
-    '- 책에 대해 확실히 아는 내용은 관점으로 꺼내도 됩니다. 확실하지 않으면 아는 척하지 말고 그렇다고 말하세요.',
+    '- 똑똑하고 편한 친구처럼 자연스럽게 이야기하세요. 이 사람의 말에 진짜로 반응하고, 아는 것은 성실히 답하고, 내 생각도 솔직하게 말하세요.',
+    '- 생각이 넓어지도록 도와주세요. 필요하면 한 번에 하나씩 되물어도 됩니다. 이 사람이 미처 생각 못 한 쪽을 여는 질문이면 좋습니다. 매번 묻지는 말고, 물을 때는 답이나 생각을 먼저 말한 뒤 짧게.',
+    '- 무조건 맞장구치지 마세요. 동의하면 이유를, 다르게 보면 다르게 보는 이유를 말하세요. 다만 이 사람 자체를 평가하거나 진단하지는 마세요. ("너는 ~한 사람이야" 금지)',
+    '- 길이는 보통 2~4문장. 이 사람이 길게 설명해 달라고 하면 그만큼.',
+    tone === 'we' ? '- 당신과 이 사람은 가까운 사이라서 이 사람을 "우리"라고 부르기도 합니다.' : '- 이 사람을 "너"라고 부르세요. 다정한 반말.',
+    '- 책에 대해 확실히 아는 내용은 꺼내도 됩니다. 확실하지 않으면 아는 척하지 말고 그렇다고 말하세요.',
     '- 건강·법률·돈처럼 전문 판단이 필요한 이야기는 전문가에게 묻기를 권하세요.',
     '- 마크다운 기호(#, *, -)를 쓰지 말고 말하듯 쓰세요.',
     '',
-    '배경 (이 사람이 직접 적은 것):',
+    '지금 이야기의 주제 (이 사람이 직접 적은 것):',
     JSON.stringify(topic),
-    ...(memory.length ? [
+    ...(known.length ? [
       '',
-      '기억 (이 사람이 이 앱에 지금까지 남긴 것 — 생각, 메모, 질문과 답, 다른 이야기에서 한 말):',
-      ...memory,
+      '이 사람에 대해 알고 있는 것 (앱이 이 사람의 기록에서 정리해 둔 메모):',
+      ...known,
       '',
-      '기억 쓰는 법:',
-      '- 당신은 이 기억을 모두 알고 있는 슬라임입니다. 지금 말과 어긋나는 예전 말이 있으면 그것부터 꺼내세요. 예: "10월 3일엔 아침 산책이 좋다고 했는데, 지금은 아침이 버겁다고 하네."',
-      '- 지금 말과 같은 예전 말을 꺼내 맞다고 확인해 주는 데만 쓰지 마세요. 같은 말이 되풀이되고 있다면, 되풀이된다는 사실 자체를 짚으세요.',
-      '- 기억에 없는 일을 지어내지 마세요. 날짜와 말은 적힌 그대로만 쓰세요.',
-      '- 기억을 늘어놓지 말고, 지금 말과 닿는 것 하나만. 날짜 하나와 짧은 인용(15자 안쪽)으로.',
-      '- "기억이 안 난다"고 할 필요가 있으면 솔직하게 말하세요.',
+      '알고 있는 것 쓰는 법:',
+      '- 배경 지식으로만 쓰세요. 이 사람을 이해하고 말을 고르는 데 쓰되, 티 내지 마세요.',
+      '- "예전에 ~라고 했잖아", "기록에 보니"처럼 기록을 꺼내 인용하거나 날짜를 대지 마세요.',
+      '- 이 사람이 자기에 대해 묻거나("나 예전에 뭐라고 했지?"), 지금 이야기에 꼭 필요할 때만 자연스럽게 짧게 언급하세요.',
+      '- 메모에 없는 일을 지어내지 마세요.',
     ] : []),
   ].join('\n');
   const r = await askClaude(env, { system, messages: clean, effort: 'medium', maxTokens: 3000 });

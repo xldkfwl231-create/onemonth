@@ -9,3 +9,5 @@ export const AI_CHAT_ENDPOINT = new URL('ai/chat', BOOK_SEARCH_ENDPOINT).href;
 export const AI_TITLES_ENDPOINT = new URL('ai/titles', BOOK_SEARCH_ENDPOINT).href;
 // 이어 주기 — 방금 먹인 생각과 이어지는 예전 기록
 export const AI_LINKS_ENDPOINT = new URL('ai/links', BOOK_SEARCH_ENDPOINT).href;
+// 슬라임이 아는 나 — 기록에서 나에 대한 메모를 뒤에서 정리
+export const AI_KNOW_ENDPOINT = new URL('ai/know', BOOK_SEARCH_ENDPOINT).href;

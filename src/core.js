@@ -3,8 +3,10 @@ export const uid = () => crypto.randomUUID();
 export const now = () => new Date().toISOString();
 export const emptyProfile = () => ({ catName: '', tone: 'we', aiConsentAt: '' });
 // AI 사용량 — 요청 종류별 호출 수와 토큰
+// 슬라임이 아는 나 — 기록에서 뒤로 정리한 나에 대한 메모. upto: 정리에 넣은 가장 최근 기록 시각, removed: 내가 지운 항목(다시 쓰지 않게)
+export const emptyKnow = () => ({ at: '', upto: '', items: [], removed: [] });
 export const emptyUsage = () => ({ since: '', calls: 0, input: 0, output: 0, byKind: {} });
-export const emptyState = () => ({ version: VERSION, profile: emptyProfile(), books: [], thoughts: [], answers: [], moments: [], readings: {}, titles: {}, links: [], insights: null, chats: [], usage: emptyUsage(), extraScales: [] });
+export const emptyState = () => ({ version: VERSION, profile: emptyProfile(), books: [], thoughts: [], answers: [], moments: [], readings: {}, titles: {}, links: [], know: emptyKnow(), insights: null, chats: [], usage: emptyUsage(), extraScales: [] });
 const object = v => v && typeof v === 'object' && !Array.isArray(v);
 function text(v, label, max = 100000, optional = false) {
   if (v == null && optional) return '';
@@ -82,6 +84,11 @@ export function normalize(input) {
     ? { date: ins.date.slice(0, 10), at: text(ins.at, '날짜', 100, true), question: ins.question.slice(0, 120), lines: ins.lines.filter(l => object(l) && typeof l.text === 'string').slice(0, 6).map(l => ({ text: l.text.slice(0, 200), ids: Array.isArray(l.ids) ? l.ids.filter(x => typeof x === 'string').slice(0, 5) : [] })) }
     : null;
   const extraScales = v3 && Array.isArray(p.extraScales) ? structuredClone(p.extraScales) : [];
+  const k = v3 && object(p.know) ? p.know : {}, str = (v, n) => typeof v === 'string' ? v.slice(0, n) : '';
+  const know = { at: str(k.at, 40), upto: str(k.upto, 40),
+    items: (Array.isArray(k.items) ? k.items : []).slice(0, 60).filter(x => object(x) && typeof x.text === 'string' && x.text.trim())
+      .map(x => ({ id: str(x.id, 100) || uid(), cat: str(x.cat, 20), text: x.text.slice(0, 120), src: (Array.isArray(x.src) ? x.src : []).filter(y => typeof y === 'string' && y.length <= 100).slice(0, 5) })),
+    removed: (Array.isArray(k.removed) ? k.removed : []).filter(x => typeof x === 'string').slice(-100).map(x => x.slice(0, 120)) };
   // 이어 둔 기록 — 슬라임이 제안하고 내가 '이어 줘'를 누른 두 기록. no: '아니야'라고 한 짝 (다시 제안하지 않게)
   const links = !v3 ? [] : list(p.links, '연결', true).slice(-5000)
     .filter(l => object(l) && typeof l.a === 'string' && typeof l.b === 'string' && l.a && l.b && l.a !== l.b && l.a.length <= 100 && l.b.length <= 100)
@@ -97,7 +104,7 @@ export function normalize(input) {
   const num = v => Number.isFinite(v) && v >= 0 ? Math.round(v) : 0;
   const u = v3 && object(p.usage) ? p.usage : {}, usage = { since: typeof u.since === 'string' ? u.since.slice(0, 40) : '', calls: num(u.calls), input: num(u.input), output: num(u.output), byKind: {} };
   if (object(u.byKind)) for (const [k, v] of Object.entries(u.byKind).slice(0, 10)) if (object(v)) usage.byKind[k.slice(0, 20)] = { calls: num(v.calls), input: num(v.input), output: num(v.output) };
-  return { version: VERSION, profile, books, thoughts, answers, moments, readings, titles, links, insights, chats, usage, extraScales };
+  return { version: VERSION, profile, books, thoughts, answers, moments, readings, titles, links, know, insights, chats, usage, extraScales };
 }
 export function backup(state) { return JSON.stringify({ format: 'reading-notebook', exportedAt: now(), data: normalize(state) }, null, 2); }
 export function stats(s) { return { books: s.books.length, entries: s.books.reduce((n, b) => n + b.entries.length, 0), questions: s.books.reduce((n, b) => n + b.questions.length, 0), thoughts: s.thoughts.length, answers: s.answers.length, chats: (s.chats || []).length, moments: s.moments.length }; }

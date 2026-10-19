@@ -169,3 +169,10 @@ test('local graph: neighbours, what my links link to, and a few recent records t
   assert.deepEqual(ids('tag:산책'), ['t0', 't1', 't2', 't3', 't5', 'tag:산책']);   // 주제어 가운데: 달린 기록과 그 기록이 이어 둔 것
   assert.deepEqual(localGraph(g, 'nope'), { nodes: [], links: [] });
 });
+test('what the slime knows about me survives a backup round trip; bad items dropped', () => {
+  const s = emptyState();
+  s.know = { at: '2026-10-19T00:00:00Z', upto: '2026-10-18T00:00:00Z', items: [{ id: 'k1', cat: '기준', text: '정해진 길이면 편함', src: ['t1', 5] }, { id: 'k2', text: '' }, 'x'], removed: ['게으름', 3] };
+  const back = normalize(JSON.parse(backup(s)).data);
+  assert.deepEqual(back.know, { at: '2026-10-19T00:00:00Z', upto: '2026-10-18T00:00:00Z', items: [{ id: 'k1', cat: '기준', text: '정해진 길이면 편함', src: ['t1'] }], removed: ['게으름'] });
+  assert.deepEqual(normalize({ version: 2, books: [], thoughts: [] }).know, { at: '', upto: '', items: [], removed: [] });
+});
