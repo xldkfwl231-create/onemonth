@@ -3,7 +3,8 @@
 export const BOARD_COLORS = { entry: '#f4c430', question: '#8a7cf0', thought: '#ff7a59', answer: '#5aa2ff', tag: '#8fcf9e', book: '#c49a6c' };
 const RADIUS = { entry: 6, question: 6, thought: 6, answer: 6 };
 
-export function mountBoard(canvas, { nodes, links, onSelect = () => {}, reduced = false } = {}) {
+// mark: 늘 테두리를 둘러 둘 점 (한 기록 주변만 볼 때 그 가운데 기록)
+export function mountBoard(canvas, { nodes, links, onSelect = () => {}, reduced = false, mark = '' } = {}) {
   const ctx = canvas.getContext('2d');
   const byId = new Map(nodes.map(n => [n.id, n]));
   const edges = links.filter(l => byId.has(l.s) && byId.has(l.t)).map(l => ({ ...l, a: byId.get(l.s), b: byId.get(l.t) }));
@@ -76,7 +77,7 @@ export function mountBoard(canvas, { nodes, links, onSelect = () => {}, reduced 
       else ctx.arc(p.x, p.y, R(p), 0, Math.PI * 2);
       ctx.fill();
       if (p.talk) { ctx.strokeStyle = '#3f8a52'; ctx.lineWidth = 2.2 / view.k; ctx.stroke(); }
-      if (p === sel) { ctx.strokeStyle = '#4a3c31'; ctx.lineWidth = 2.6 / view.k; ctx.beginPath(); ctx.arc(p.x, p.y, R(p) + 4 / view.k, 0, Math.PI * 2); ctx.stroke(); }
+      if (p === sel || p.id === mark) { ctx.strokeStyle = '#4a3c31'; ctx.lineWidth = 2.6 / view.k; ctx.beginPath(); ctx.arc(p.x, p.y, R(p) + 4 / view.k, 0, Math.PI * 2); ctx.stroke(); }
     }
     // 글자: 주제어와 책은 늘, 기록은 크게 볼 때나 고른 것 곁만
     ctx.textAlign = 'center'; ctx.textBaseline = 'top';
