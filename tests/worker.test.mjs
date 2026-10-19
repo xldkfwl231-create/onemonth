@@ -80,19 +80,19 @@ test('summary: refuses an empty book and unknown sites', async () => {
   assert.equal((await call({ entries: [], questions: [{ id: 'q', text: '왜?' }] }, { path: '/ai/summary', origin: 'https://evil.example' })).status, 403);
 });
 
-test('chat: the slime gets my records as memory', async () => {
+test('chat: what the app knows about me goes as quiet background, not quotes', async () => {
   let body;
-  fakeAI({ stop_reason: 'end_turn', content: [{ type: 'text', text: '출근길 얘기 기억나.' }], usage: { input_tokens: 10, output_tokens: 5 } }, (url, init) => { body = JSON.parse(init.body); });
-  const memory = [{ date: '10월 3일', kind: '생각', text: '혼자 걷는 출근길이 좋았다' }, { kind: '자주 나온 주제어', text: '#혼자 3' }, { text: '' }, ...Array.from({ length: 70 }, (_, i) => ({ date: '', kind: '생각', text: '옛 생각 ' + i }))];
-  const res = await call({ topic: { kind: 'free' }, memory, messages: [{ role: 'user', text: '요즘 어때?' }] }, { path: '/ai/chat' });
+  fakeAI({ stop_reason: 'end_turn', content: [{ type: 'text', text: '그렇구나.' }], usage: { input_tokens: 10, output_tokens: 5 } }, (url, init) => { body = JSON.parse(init.body); });
+  const profile = [{ cat: '기준', text: '정해진 길이 있으면 오히려 편하다고 느낌' }, { cat: '고민', text: '' }, ...Array.from({ length: 50 }, (_, i) => ({ cat: '관심사', text: '관심 ' + i }))];
+  const res = await call({ topic: { kind: 'free' }, profile, memory: [{ text: '예전 방식 기억' }], messages: [{ role: 'user', text: '요즘 어때?' }] }, { path: '/ai/chat' });
   assert.equal(res.status, 200);
-  assert.ok(!body.system.includes('혼자 걷는 출근길'));   // 70개를 넘겨 맨 뒤 60개만
-  assert.match(body.system, /옛 생각 69/);
-  assert.match(body.system, /기억 쓰는 법/);
-  assert.match(body.system, /되묻지 말고/);
-  const res2 = await call({ topic: { kind: 'free' }, memory: memory.slice(0, 2), messages: [{ role: 'user', text: '요즘 어때?' }] }, { path: '/ai/chat' });
-  assert.equal(res2.status, 200);
-  assert.match(body.system, /\[10월 3일\] 생각: 혼자 걷는 출근길이 좋았다/);
+  assert.match(body.system, /- 기준: 정해진 길이 있으면 오히려 편하다고 느낌/);
+  assert.ok(!body.system.includes('관심 45'));   // 40개까지만
+  assert.ok(!body.system.includes('예전 방식 기억'));   // 기록 원문(memory)은 더 받지 않음
+  assert.match(body.system, /티 내지 마세요/);
+  assert.match(body.system, /되물어도 됩니다/);   // 생각이 넓어지도록 되묻기 허용
+  await call({ topic: { kind: 'free' }, messages: [{ role: 'user', text: '안녕' }] }, { path: '/ai/chat' });
+  assert.ok(!body.system.includes('알고 있는 것 쓰는 법'));   // 메모가 없으면 그 부분도 없음
 });
 
 test('chat: sends the conversation as turns, merges same-side lines, returns the reply', async () => {
@@ -109,10 +109,8 @@ test('chat: sends the conversation as turns, merges same-side lines, returns the
   assert.equal(body.messages[0].content, '관찰하라는 말\n\n그게 어렵더라');
   assert.ok(!('next' in out));   // 이어서 꺼낼 말 단추는 없앰
   assert.ok(!body.output_config.format);
-  assert.match(body.system, /150자 안쪽/);
   assert.match(body.system, /어떻게 살아낼 것인가/);
-  assert.match(body.system, /빈 동의로 시작하지 마세요/);
-  assert.match(body.system, /다른 쪽 목소리/);   // '우리' 말투여도 동의하지 않게
+  assert.match(body.system, /무조건 맞장구치지 마세요/);
 });
 
 test('chat: the last turn must be the person, and bad roles are refused', async () => {
@@ -166,4 +164,26 @@ test('links: up to two known, distinct records with a short why', async () => {
   assert.equal((await call({ fresh: { id: 'a', text: 'x' }, candidates: [] }, { path: '/ai/links' })).status, 400);
   assert.equal((await call({ fresh: { id: 'a', text: 'x' }, candidates: [{ id: 'a', text: '자기 자신' }] }, { path: '/ai/links' })).status, 400);
   assert.equal((await call({ fresh: { id: 'a', text: 'x' }, candidates: [{ id: 'b', text: 'y' }] }, { path: '/ai/links', origin: 'https://evil.example' })).status, 403);
+});
+
+test('know: rewrites notes about me from new records, drops removed items and unknown sources', async () => {
+  let body;
+  fakeAI({ stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify({ items: [
+    { cat: '기준', text: ' 정해진 길이 있으면 편하다고 느낌 ', src: ['r1', 'zzz', 'p1'] },
+    { cat: '이상한갈래', text: '요즘 부채가 마음에 걸림', src: ['r2'] },
+    { cat: '관심사', text: '독서', src: [] },
+    { cat: '고민', text: '게으름', src: ['r1'] } ] }) }], usage: { input_tokens: 300, output_tokens: 80 } }, (url, init) => { body = JSON.parse(init.body); });
+  const res = await call({ items: [{ cat: '관심사', text: '산책', src: ['p1'] }], records: [{ id: 'r1', date: '10월 3일', kind: '생각', text: '정해진 길이면 편해' }, { id: 'r2', kind: '메모', text: '부채라는 절벽' }], removed: ['게으름'] }, { path: '/ai/know' });
+  assert.equal(res.status, 200);
+  const out = await res.json();
+  assert.deepEqual(out.items, [
+    { cat: '기준', text: '정해진 길이 있으면 편하다고 느낌', src: ['r1', 'p1'] },   // 모르는 근거 버림, 예전 메모의 근거는 둠
+    { cat: '요즘', text: '요즘 부채가 마음에 걸림', src: ['r2'] },              // 모르는 갈래는 '요즘'
+    { cat: '관심사', text: '독서', src: [] } ]);                                 // 내가 지운 '게으름'은 다시 안 씀
+  const sent = JSON.parse(body.messages[0].content);
+  assert.deepEqual(sent.지운_것, ['게으름']);
+  assert.equal(sent.예전_메모[0].text, '산책');
+  assert.match(body.system, /진단하거나 평가하지 마세요/);
+  assert.equal((await call({ items: [], records: [] }, { path: '/ai/know' })).status, 400);
+  assert.equal((await call({ records: Array.from({ length: 81 }, (_, i) => ({ id: 'x' + i, text: 't' })) }, { path: '/ai/know' })).status, 400);
 });

@@ -2,9 +2,9 @@ import { uid, now, emptyState, normalize, backup, stats, matchesBook, dateLabel,
 import { mountSlime } from './slime.js';
 import { mountBoard, BOARD_COLORS } from './board.js';
 import { openStore, load, commit, previous } from './storage.js';
-import { BOOK_SEARCH_ENDPOINT, AI_ENDPOINT, AI_SUMMARY_ENDPOINT, AI_CHAT_ENDPOINT, AI_TITLES_ENDPOINT, AI_LINKS_ENDPOINT } from './config.js';
+import { BOOK_SEARCH_ENDPOINT, AI_ENDPOINT, AI_SUMMARY_ENDPOINT, AI_CHAT_ENDPOINT, AI_TITLES_ENDPOINT, AI_LINKS_ENDPOINT, AI_KNOW_ENDPOINT } from './config.js';
 
-const BUILD = '1019c';   // 폰에서 어떤 판을 보고 있는지 확인용
+const BUILD = '1019d';   // 폰에서 어떤 판을 보고 있는지 확인용
 const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 // 이름 뒤 조사 — 받침이 있으면 이/과, 없으면 가/와 (뚱이가, 말랑이)
@@ -135,7 +135,7 @@ function maybeSay(pokes) {
 }
 // 슬라임이 먹은 기록 — 생각, 책 문장, 슬라임에게 한 답. 오래된 것부터.
 // ── AI 사용량 ── 요청마다 아래에 잠깐 보여 주고, '나'에 모아 둡니다. 값은 Claude Haiku 5.5 기준 대략치.
-const USAGE_LABEL = { tags: '주제어 붙이기', titles: '문장 제목', links: '이어 주기', chat: '이야기', summary: '책 정리', reflect: '오늘의 말(예전)' };
+const USAGE_LABEL = { tags: '주제어 붙이기', titles: '문장 제목', links: '이어 주기', know: '나 정리', chat: '이야기', summary: '책 정리', reflect: '오늘의 말(예전)' };
 const PRICE = { input: 0.10 / 1e6, output: 0.50 / 1e6 };
 const dollars = u => (u.input * PRICE.input + u.output * PRICE.output);
 const WON_PER_USD = 1400;   // 대략 환율 — 정확한 값이 필요하면 여기만 고치면 됩니다
@@ -196,6 +196,7 @@ async function readRecords() {
     if (fed) lastFed = '';
     if ((bite || tag) && route().page === 'home') setTimeout(() => showSay(bite || `음… #${tag} 맛이 나.`), 300);
     if (fed) setTimeout(() => suggestLinks(fed), 1500);   // 한마디 뒤에, 이어지는 예전 기록이 있으면 제안
+    setTimeout(() => updateKnow(), 6000);   // 나에 대한 메모는 때가 됐을 때만 (updateKnow가 판단)
   } catch { readBackoff = Date.now() + 5 * 60e3; }
   finally { reading = false; }
 }
@@ -297,6 +298,51 @@ function homeTop() {
     : '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2" fill="currentColor"/><path d="M12 2.5v2.6M12 18.9v2.6M2.5 12h2.6M18.9 12h2.6M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
   const map = `<button class="home-map" data-action="open-board" aria-label="기록 지도 펼치기" title="기록 지도 — 슬라임을 꾹 눌러도 펼쳐져요"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="7" r="2.4" fill="currentColor"/><circle cx="18" cy="6" r="2" fill="currentColor"/><circle cx="12" cy="14" r="3" fill="currentColor"/><circle cx="5.5" cy="19" r="1.8" fill="currentColor"/><circle cx="19" cy="18" r="2.2" fill="currentColor"/><path d="M6 7l6 7 6-8M12 14l-6.5 5M12 14l7 4" stroke="currentColor" stroke-width="1.6" fill="none"/></svg></button>`;
   return `<a class="home-name" href="#me" aria-label="${esc(name)} — 나 화면으로">${miniSlime(look.color)}<b>${esc(name)}</b><span>방울 ${n}${look.tag ? ` · #${esc(look.tag)}` : ''}</span></a><span class="home-right">${map}<span class="home-day">${icon}${esc(day)}</span></span>`;
+}
+// ── 슬라임이 아는 나 ── 기록(생각 · 메모 · 질문과 답 · 이야기에서 한 말)을 뒤에서 읽고 나에 대한 메모를 고쳐 씁니다.
+// 새 기록이 5개 넘게 쌓였거나, 새 기록이 있고 하루쯤 지났을 때. 이야기할 때는 이 메모만 배경으로 갑니다. 나 탭에서 보고 지울 수 있어요.
+let knowing = false;
+function knowSources() {
+  const out = [], add = (id, at, kind, text, go) => { if (text && text.trim() && isIso(at)) out.push({ id, at: Date.parse(at), date: at, kind, text, go }); };
+  const more = x => (x.more || []).map(m => m.text);
+  for (const t of state.thoughts) add(t.id, t.createdAt, '생각', [t.text, ...more(t)].join(' / '), { kind: 'thought', id: t.id });
+  for (const a of state.answers) add(a.id, a.createdAt, '슬라임의 물음에 한 답', `${a.prompt} → ${[a.text, ...more(a)].join(' / ')}`, { kind: 'answer', id: a.id });
+  for (const b of state.books) {
+    for (const e of b.entries) add(e.id, e.createdAt, `『${cutN(b.title, 20)}』 문장에 단 메모`, [e.note, ...more(e)].filter(Boolean).join(' / '), { kind: 'entry', id: e.id, book: b.id });
+    for (const q of b.questions) add(q.id, q.answeredAt || q.createdAt, `『${cutN(b.title, 20)}』 질문`, q.text + (q.answer ? ` → 지금의 답: ${q.answer}` : ''), { kind: 'question', id: q.id, book: b.id });
+  }
+  for (const c of state.chats) { const mine = c.messages.filter(m => m.role === 'user'); if (mine.length) add('chat:' + c.id, mine.at(-1).at, '이야기에서 한 말', mine.slice(-6).map(m => m.text).join(' / '), { chat: c.id }); }
+  return out;
+}
+async function updateKnow(force = false) {
+  if (knowing || !ready || busy || !state.profile.aiConsentAt || !AI_KNOW_ENDPOINT || !navigator.onLine) return false;
+  const k = state.know || { items: [], removed: [] }, all = knowSources(), upto = Date.parse(k.upto) || 0, fresh = all.filter(x => x.at > upto);
+  if (!force && !(fresh.length >= 5 || (fresh.length && Date.now() - (Date.parse(k.at) || 0) > 20 * 3600e3))) return false;
+  const pick = (force || !fresh.length ? all : fresh).sort((a, b) => b.at - a.at).slice(0, 80);
+  if (!pick.length && !k.items.length) return false;
+  knowing = true;
+  try {
+    const res = await fetch(AI_KNOW_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(60000),
+      body: JSON.stringify({ items: k.items.map(({ cat, text, src }) => ({ cat, text, src })), records: pick.map(x => ({ id: x.id, date: mdLabel(x.date), kind: x.kind, text: x.text.slice(0, 400) })), removed: k.removed || [] }) });
+    if (!res.ok) throw new Error(String(res.status));
+    const body = await res.json(); if (!Array.isArray(body?.items)) throw new Error('bad reply');
+    const newest = Math.max(upto, ...all.map(x => x.at));
+    knowing = false;
+    return await change(s => {
+      s.know = { at: now(), upto: new Date(newest).toISOString(), items: body.items.map(x => ({ id: uid(), cat: String(x.cat || ''), text: String(x.text || ''), src: Array.isArray(x.src) ? x.src : [] })), removed: s.know?.removed || [] };
+      addUsage(s, 'know', body.usage);
+    }, force ? `${ig(state.profile.catName || '슬라임')} 나에 대해 다시 정리했어요.` : '');
+  } catch { return false; }
+  finally { knowing = false; }
+}
+const KNOW_CATS = ['관심사', '고민', '기준', '요즘', '바뀐 생각'];
+function knowHtml() {
+  const k = state.know || { items: [] }, name = state.profile.catName || '슬라임', head = `<h2>${esc(ig(name))} 아는 나</h2>`;
+  if (!state.profile.aiConsentAt) return `<section class="me-card know">${head}<p class="hint">아래 <b>슬라임이 기록 읽기</b>를 켜면, ${esc(ig(name))} 기록을 뒤에서 읽고 나에 대해 알게 된 것을 여기 정리해요.</p></section>`;
+  const by = c => k.items.filter(x => (KNOW_CATS.includes(x.cat) ? x.cat : '요즘') === c);
+  const body = k.items.length ? KNOW_CATS.filter(c => by(c).length).map(c => `<h3>${c}</h3><ul class="know-list">${by(c).map(x => `<li><button class="know-go" data-action="know-go" data-id="${esc(x.id)}" ${x.src.length ? '' : 'disabled'}><span>${esc(x.text)}</span>${x.src.length ? `<small>근거 ${x.src.length} ›</small>` : ''}</button><button class="know-del" data-action="know-del" data-id="${esc(x.id)}" aria-label="이건 아니야, 지우기" title="이건 아니야">×</button></li>`).join('')}</ul>`).join('')
+    : `<p class="hint">아직 정리 전이에요. 기록이 쌓이면 ${esc(ig(name))} 하루 한 번쯤 뒤에서 정리해요.</p>`;
+  return `<section class="me-card know">${head}<p class="hint">이야기할 때 ${esc(ig(name))} 배경으로만 쓰는 메모예요. 틀린 건 ×로 지우면 다시 쓰지 않아요.${k.at ? ` · ${esc(dateLabel(k.at))} 정리` : ''}</p>${body}<div class="me-toggle"><button data-action="know-refresh" ${knowing ? 'disabled' : ''}>${knowing ? '정리하는 중…' : '지금 다시 정리하기'}</button></div></section>`;
 }
 // ── 이어 주기 ── 생각을 먹이면 슬라임이 예전 기록 가운데 뜻이 이어지는 것을 찾아 첫 화면 말풍선으로 제안합니다.
 // '이어 줘'를 누르면 두 기록이 이어지고(기록 지도에 굵은 선), '아니야'면 그 짝은 다시 제안하지 않습니다.
@@ -869,35 +915,6 @@ function renderTalk(id) {
   }
   if (keep && $('#' + keep[0])) { const el = $('#' + keep[0]); el.focus({ preventScroll: true }); el.setSelectionRange(keep[1], keep[2]); }
 }
-// ── 슬라임의 기억 ── 이 앱에 남긴 모든 것(책에서 옮겨 적은 문장은 빼고) 가운데, 지금 이야기와 주제어가 겹치는 것을 먼저,
-// 그다음 최근 것을 골라 오래된 순으로 보냅니다. 자주 나온 주제어도 한 줄로.
-function memoryFor(c) {
-  const { book } = talkSubject(c), skip = new Set([c.topic.ref]);
-  const topicTags = new Set([...(state.readings[c.topic.ref]?.tags || []), ...(c.topic.kind === 'book' && book ? book.entries.flatMap(e => state.readings[e.id]?.tags || []) : [])]);
-  const linked = new Set(linkedOf(c.topic.ref).map(x => x.id));   // 내가 이 기록과 이어 둔 것은 맨 앞에, 그렇다고 알려서
-  const items = [], add = (id, kind, text, at) => {
-    if (!text || !text.trim() || skip.has(id)) return;
-    const score = (state.readings[id]?.tags || []).filter(t => topicTags.has(t)).length + (linked.has(id) ? 10 : 0);
-    items.push({ kind: linked.has(id) ? `${kind} (지금 이야기하는 기록과 내가 이어 둔 것)` : kind, text: text.slice(0, 380), at: isIso(at) ? Date.parse(at) : 0, score });
-  };
-  const words = list => (list || []).map(m => m.text);
-  for (const t of state.thoughts) add(t.id, '생각', [t.text, ...words(t.more)].join(' / 덧붙임: '), t.createdAt);
-  for (const a of state.answers) add(a.id, '슬라임의 물음에 한 답', `${a.prompt} → ${[a.text, ...words(a.more)].join(' / ')}`, a.createdAt);
-  for (const b of state.books) {
-    for (const e of b.entries) add(e.id, `『${cutN(b.title, 24)}』 문장에 단 메모`, [e.note, ...words(e.more)].filter(Boolean).join(' / '), e.createdAt);
-    for (const q of b.questions) add(q.id, `『${cutN(b.title, 24)}』 질문`, `${q.text}${q.answer ? ` → 지금의 답: ${q.answer}` : ' (아직 답 없음)'}${(q.history || []).length ? ` (그땐: ${q.history.at(-1).text})` : ''}`, q.createdAt);
-  }
-  for (const x of state.chats) {
-    if (x.id === c.id) continue;
-    const mine = x.messages.filter(m => m.role === 'user'); if (!mine.length) continue;
-    add('chat:' + x.id, `이야기 — ${talkKind[x.topic.kind]}${x.topic.kind === 'free' ? '' : ` “${cutN(talkFull(x), 30)}”`}에서 내가 한 말`, mine.slice(-4).map(m => m.text).join(' / '), mine.at(-1).at);
-  }
-  const related = items.filter(x => x.score).sort((a, b) => b.score - a.score || b.at - a.at).slice(0, 20);
-  const rest = items.filter(x => !related.includes(x)).sort((a, b) => b.at - a.at).slice(0, 55 - related.length);
-  const day = at => at ? new Date(at).toLocaleDateString('ko-KR', { year: new Date(at).getFullYear() === new Date().getFullYear() ? undefined : 'numeric', month: 'long', day: 'numeric' }) : '';
-  const tags = tagCounts().slice(0, 12).map(([t, n]) => `#${t} ${n}번`).join(', ');
-  return [...(tags ? [{ date: '', kind: '자주 나온 주제어', text: tags }] : []), ...[...related, ...rest].sort((a, b) => a.at - b.at).map(x => ({ date: day(x.at), kind: x.kind, text: x.text }))];
-}
 let talkReplied = '';   // 방금 슬라임이 답한 이야기 — 다음 말을 보낼 때까지, 다시 그려도 그 답의 첫 줄이 보이게
 async function sendTalk(id, text) {
   if (talkPending || busy) return;
@@ -908,7 +925,7 @@ async function sendTalk(id, text) {
   try {
     const c = state.chats.find(x => x.id === id);
     const res = await fetch(AI_CHAT_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(60000), body: JSON.stringify({
-      name: state.profile.catName || '슬라임', tone: state.profile.tone, topic: talkTopic(c), memory: memoryFor(c),
+      name: state.profile.catName || '슬라임', tone: state.profile.tone, topic: talkTopic(c), profile: (state.know?.items || []).map(({ cat, text }) => ({ cat, text })),   // 나에 대한 메모만 배경으로 (기록 원문은 보내지 않음)
       messages: [...c.messages.slice(-30).map(m => ({ role: m.role, text: m.text }))]
     }) });
     const out = await res.json().catch(() => ({}));
@@ -1061,6 +1078,7 @@ function renderMe() {
       <div class="me-who"><h1>${esc(name)}</h1><p>${days ? `<span>함께한 지 ${days}일</span> · ` : ''}<span>방울 ${beadList().length}개</span>${look.tag ? ` · <span>요즘 #${esc(look.tag)}</span>` : ''}</p></div>
       <button data-action="profile">바꾸기</button>
     </section>
+    ${knowHtml()}
     ${seenHtml()}
     ${guideHtml()}
     <section class="me-card"><h2>슬라임이 기록 읽기</h2>
@@ -1155,6 +1173,9 @@ document.addEventListener('click', e => {
     case 'talk-quote': { if (ctxOpen) { ctxOpen = false; document.body.classList.remove('ctx-open'); $('[data-action=talk-ctx]')?.setAttribute('aria-pressed', 'false'); } const el = $('#talk-input'); if (el) { el.value = (el.value ? el.value.replace(/\s*$/, '\n') : '') + `“${btn.dataset.text}” `; el.dispatchEvent(new Event('input')); el.focus(); } break; }
     case 'talk-keep': talkKeep(route().id); break;
     case 'link-yes': answerLink(true); break;
+    case 'know-go': { const x = state.know?.items.find(i => i.id === id), src = x && knowSources().find(r => x.src.includes(r.id)); if (!src) { notice('근거 기록을 찾을 수 없어요. 지웠을 수 있어요.'); break; } if (src.go.chat) location.hash = `talk/${src.go.chat}`; else goRecord(src.go); break; }
+    case 'know-del': { const x = state.know?.items.find(i => i.id === id); if (x) change(s => { s.know.items = s.know.items.filter(i => i.id !== id); s.know.removed.push(x.text); }, '지웠어요. 다시 쓰지 않을게요.'); break; }
+    case 'know-refresh': updateKnow(true).then(ok => { if (!ok) { notice('지금은 정리하지 못했어요. 잠시 뒤 다시 해 주세요.'); if (route().page === 'me') renderMe(); } }); renderMe(); break;
     case 'linked-go': { const x = linkPool().find(r => r.id === id); if (!x) break; if (route().page === 'talk') { talkFocus = true; startTalk(x.go.kind, x.id, x.go.book || ''); } else goRecord(x.go); break; }
     case 'unlink': unlink(id, btn.dataset.other); break;
     case 'link-no': answerLink(false); break;
@@ -1200,7 +1221,7 @@ async function init() {
     db = await openStore(); const loaded = await load(db); state = loaded.state; revision = loaded.revision; ready = true;
     // 2026-10-10 슬라임의 질문에 답한 '쇼츠볼때'가 생각 탭에 잘못 들어갔던 것 한 건만 지웁니다 (사용자 요청)
     const stray = state.thoughts.find(t => t.text.replace(/\s/g, '') === '쇼츠볼때' && (t.createdAt || '').startsWith('2026-10-10'));
-    setTimeout(readRecords, 1500); window.addEventListener('online', () => { readBackoff = 0; readRecords(); });
+    setTimeout(readRecords, 1500); setTimeout(() => updateKnow(), 9000); window.addEventListener('online', () => { readBackoff = 0; readRecords(); });
     if (stray) await change(s => { s.thoughts = s.thoughts.filter(t => t.id !== stray.id); }, '');
     render(); status('이 브라우저에 저장됨');
     if (loaded.migrated || loaded.upgraded) notice('이전 기록을 모두 가져왔습니다. 원본 데이터도 그대로 보관했습니다.');
